@@ -1,6 +1,6 @@
 /* A ViewPager implementation in JS
 
-Copy this to your .css (
+Copy this to your .css(
     .vp-container {
         position: relative;
     }
@@ -59,7 +59,7 @@ SideEffects(
     3) Declares following constants:
             TOUCH_SLOP,
             SNAP_TRESHOLD
-    4) Uses css classes:
+    4) Uses CSS-classes:
             .vp-container,
             .vp-page,
             .no-transition
