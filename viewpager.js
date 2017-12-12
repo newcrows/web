@@ -119,7 +119,7 @@ function ViewPager(container, bounds, onBindCallback, onClickCallback, onChangeC
         
         //if page at index not loaded currently, skip binding
         if (Math.abs(which) > 1)
-            return
+            return;
         
         //invoke callback delegate
         this.onBindInternal(this.pages[which], index);
