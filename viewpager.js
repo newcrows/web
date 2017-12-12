@@ -328,8 +328,7 @@ function vpOnSwipeMove(e) {
         this.onBeforeChange(this.index);
     }
 
-    //TODO: CHECK THIS
-    //decide wether to can swipe or would swipe out of bounds
+    //decide wether page can swipe or would swipe out of bounds
     if (!this.isOverSlop || dx > 0 && this.index == this.bounds[0] || dx < 0 && this.index == this.bounds[1])
         return;
 
