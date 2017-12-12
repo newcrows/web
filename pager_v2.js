@@ -270,7 +270,7 @@ function ViewPager(container, bounds, onBindCallback, onClickCallback, onChangeC
     }
 }
 
-//click delegate that decides if click callback will invoked, based on _touchSlop
+//click delegate that decides if click callback will be invoked, based on TOUCH_SLOP
 function vpOnClickDelegate(e) {
     //only invoke callback when not snapping pages
     if (!this.isOverSlop)
