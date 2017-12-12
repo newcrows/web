@@ -30,8 +30,8 @@ Constructor(
     [bounds]                : Number[2]                         : The left and right index bounds, inclusive
     [onBindCallback]        : Function(HTMLElement, Number)     : Called when {page} needs content for {index}
     [onChangeCallback]      : Function(Number)                  : Called when {index} changed
-    [onCreateCallback]      : Function(HTMLElement)             : Called when a page is created from template
-    [onClickCallback]       : Function(Event)                   : Click Event adjusted to work with ViewPager
+    [onCreateCallback]      : Function(HTMLElement)             : Called when a {page} is created from template
+    [onClickCallback]       : Function(Event)                   : {Click Event} adjusted to work with ViewPager
     [onBeforeChangeCallback]: Function(Number)                  : Called before {index} changes
 )
 
