@@ -357,7 +357,7 @@ function vpOnSwipeEnd(e) {
         this.snap(1);
     else if (dx > SNAP_TRESHOLD)
         this.snap(-1);
-    else if (Math.abs(dx) > 0)
+    else if (this.isOverSlop)
         this.snap(0);
 
     //release isSwiping flag
