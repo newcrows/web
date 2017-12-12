@@ -19,7 +19,7 @@ Copy this to your .css(
 
         transition: transform 0.4s ease;
     }
-    
+
     .no-transition {
         transition: none;
     }
@@ -29,8 +29,9 @@ Constructor(
     container               : HTMLElement                       : Element that will act as ViewPager, needs height set
     [bounds]                : Number[2]                         : The left and right index bounds, inclusive
     [onBindCallback]        : Function(HTMLElement, Number)     : Called when {page} needs content for {index}
-    [onClickCallback]       : Function(Event)                   : Click Event adjusted to work with ViewPager
     [onChangeCallback]      : Function(Number)                  : Called when {index} changed
+    [onCreateCallback]      : Function(HTMLElement)             : Called when a page is created from template
+    [onClickCallback]       : Function(Event)                   : Click Event adjusted to work with ViewPager
     [onBeforeChangeCallback]: Function(Number)                  : Called before {index} changes
 )
 
@@ -38,6 +39,7 @@ Functions(
     notifyBind(Number)  : Call to trigger onBindCallback if page at {index} is loaded
     next()              : Call to trigger snap to the next page, if not out of bounds
     previous()          : Call to trigger snap to the previous page, if not out of bounds
+    rebindAll()         : Call to trigger reload for all pages
 
     setBounds(Number[2]): Set the left and right bounds, inclusive. This rebinds all loaded pages
     getBounds()         : Return this pager's current bounds
@@ -46,6 +48,7 @@ Functions(
     getIndex()          : Get this pager's current index
 
     getPages()          : Return this pager's underlying pages
+    getPage(Number)     : Returns page for {index} or, if not loaded, return null
 
     setTemplate(Element): Set the {template} this pager uses to render pages. This rebinds all loaded pages
     getTemplate()       : Return this pager's current template to render pages
@@ -78,7 +81,7 @@ SideEffects(
 let TOUCH_SLOP = 30;
 let SNAP_TRESHOLD = 80;
 
-function ViewPager(container, bounds, onBindCallback, onClickCallback, onChangeCallback, onBeforeChangeCallback) {
+function ViewPager(container, bounds, onBindCallback, onChangeCallback, onCreateCallback, onClickCallback, onBeforeChangeCallback) {
     this.container = container;
     container.classList.add("vp-container");
 
@@ -109,12 +112,19 @@ function ViewPager(container, bounds, onBindCallback, onClickCallback, onChangeC
     this.onBind = onBindCallback ? onBindCallback :  function(page, index) {
         console.log("onBind => " + page.className + ":" + index);
     };
-    this.onClick = onClickCallback ? onClickCallback : function(e) {
-        console.log("onClick => " + e.target);
-    };
+    
     this.onChange = onChangeCallback ? onChangeCallback : function(newIndex) {
         console.log("onChange => " + newIndex);
     };
+    
+    this.onCreate = onCreateCallback ? onCreateCallback : function(page) {
+        console.log("onCreate => " + page.className);
+    }
+    
+    this.onClick = onClickCallback ? onClickCallback : function(e) {
+        console.log("onClick => " + e.target);
+    };
+    
     this.onBeforeChange = onBeforeChangeCallback ? onBeforeChangeCallback : function(oldIndex) {
         console.log("onBeforeChange => " + oldIndex);
     };
@@ -124,11 +134,11 @@ function ViewPager(container, bounds, onBindCallback, onClickCallback, onChangeC
     this.notifyBind = function(index) {
         //which page corresponds to passed index at the moment
         var which = index - this.index;
-        
+
         //if page at index not loaded currently, skip binding
         if (Math.abs(which) > 1)
             return;
-        
+
         //invoke callback delegate
         this.onBindInternal(this.pages[which], index);
     }
@@ -141,6 +151,12 @@ function ViewPager(container, bounds, onBindCallback, onClickCallback, onChangeC
     //attempt to go one page backward
     this.previous = function() {
         this.snap(-1);
+    }
+    
+    //request rebind for all pages
+    this.rebindAll = function() {
+        for (var c = -1; c < 2; c++)
+            this.onBindInternal(this.pages[c], this.index + c);
     }
 
     /* GETTERS / SETTERS */
@@ -166,10 +182,20 @@ function ViewPager(container, bounds, onBindCallback, onClickCallback, onChangeC
         return this.pages;
     }
 
+    //return page, if loaded or null otherwise
+    this.getPage = function(index) {
+        var which = index - this.index;
+
+        if (Math.abs(which) > 1)
+            return null;
+
+        return this.pages[pIndex];
+    }
+
     this.setTemplate = function(template) {
         this.template = template;   //store template
         this.createFromTemplate();  //create pages from stored template
-        this.bindAll();             //(re-)bind all pages
+        this.rebindAll();             //(re-)bind all pages
         this.resetTranslate();      //reset all pages transform from -100% to 0% to +100%
     }
 
@@ -188,7 +214,7 @@ function ViewPager(container, bounds, onBindCallback, onClickCallback, onChangeC
         this.index = index;
 
         //reload pages
-        this.bindAll();
+        this.rebindAll();
     }
 
     //create pages from stored template (clone template three times)
@@ -196,18 +222,17 @@ function ViewPager(container, bounds, onBindCallback, onClickCallback, onChangeC
         this.pages = [];
         this.container.innerHTML = "";
         for (var c = -1; c < 2; c++) {
+            //clone template
             var page = this.template.cloneNode(true);
             page.classList.add("vp-page");
+            
+            //notify callback a page was created
+            this.onCreate(page);
 
+            //append new page
             this.pages[c] = page;
             this.container.appendChild(page);
         }
-    }
-
-    //request bind for all pages
-    this.bindAll = function() {
-        for (var c = -1; c < 2; c++)
-            this.onBindInternal(this.pages[c], this.index + c);
     }
 
     //reset translation of all pages to default (from -100% to 0% to +100%)
@@ -233,15 +258,15 @@ function ViewPager(container, bounds, onBindCallback, onClickCallback, onChangeC
         //set correct visibility for pages
         for (var c = -1; c < 2; c++)
             this.visible(pages[c], c != -dir || c == 0);
+        
+        //notify callback with old index
+        this.onBeforeChange(this.index);
 
         //reorder pages
         var hold = pages[0];
         pages[0] = pages[dir];
         pages[dir] = pages[-dir];
         pages[-dir] = hold;
-
-        //notify callback with old index
-        this.onBeforeChange(this.index);
 
         //adjust index
         this.index += dir;
