@@ -1,5 +1,6 @@
 /* A ViewPager implementation in JS
-NOTE: Works on touch-devices and desktop
+Works on touch-devices and desktop
+NOTE: If you get [Uncaught TypeError: Cannot read property '-1' of null..] errors, remember to call setTemplate(..)
 
 Copy this to your .css(
     .vp-container {
