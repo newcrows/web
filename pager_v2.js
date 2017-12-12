@@ -1,7 +1,30 @@
 /* A ViewPager implementation in JS
 
+Copy this to your .css (
+    .vp-container {
+        position: relative;
+    }
+
+    .vp-page {
+        position: absolute;
+        top: 0;
+        left: 0;
+
+        width: 100%;
+        height: 100%;
+
+        box-sizing: border-box;
+
+        transition: transform 0.4s ease;
+    }
+    
+    .no-transition {
+        transition: none;
+    }
+)
+
 Constructor(
-    container               : HTMLElement                       : Element that will act as ViewPager
+    container               : HTMLElement                       : Element that will act as ViewPager, needs height set
     [bounds]                : Number[2]                         : The left and right index bounds, inclusive
     [onBindCallback]        : Function(HTMLElement, Number)     : Called when {page} needs content for {index}
     [onClickCallback]       : Function(Event)                   : Click Event adjusted to work with ViewPager
@@ -36,9 +59,14 @@ SideEffects(
     3) Declares following constants:
             TOUCH_SLOP,
             SNAP_TRESHOLD
-            
+    4) Uses css classes:
+            .vp-container,
+            .vp-page,
+            .no-transition
+
     No other side effects.
 )
+
 */
 
 //values for swipe and click handling
