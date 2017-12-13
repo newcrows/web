@@ -189,7 +189,7 @@ function ViewPager(container, bounds, onBindCallback, onChangeCallback, onCreate
         if (Math.abs(which) > 1)
             return null;
 
-        return this.pages[pIndex];
+        return this.pages[which];
     }
 
     this.setTemplate = function(template) {
@@ -212,6 +212,8 @@ function ViewPager(container, bounds, onBindCallback, onChangeCallback, onCreate
             index = index < bounds[0] ? bounds[0] : bounds[1];
         }
         this.index = index;
+        
+        this.onChange(this.index);  //notify index changed
 
         //reload pages
         this.rebindAll();
