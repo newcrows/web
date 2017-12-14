@@ -64,10 +64,10 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
         //grab unixtime as date object
         var date = fromUnix(unix);
 
-        //add item to backing data
+        //update item in backing data
         this.data.setUnix(unix, item);
 
-        //call current mode's add callback
+        //call current mode's update callback
         this.updateCall(date, unix, item);
     }
 
@@ -75,15 +75,14 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
         //grab unixtime as date object
         var date = fromUnix(unix);
 
-        //add item to backing data
+        //remove item from backing data
         this.data.deleteUnix(unix);
 
-        //call current mode's add callback
+        //call current mode's remove callback
         this.removeCall(date, unix);
     }
 
     /* CALLBACKS */
-
     this.onModeChange = onModeChangeCallback ? onModeChangeCallback : noop;
 
     this.onFilter = onFilterCallback ? onFilterCallback : noop;
@@ -91,7 +90,6 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
     this.onAction = onActionCallback ? onActionCallback : noop;
 
     /* LISTENERS */
-
     //listen for dimension changes
     addEventListener("dimension_changed", function() {
         //just reload pager when dimensions change
