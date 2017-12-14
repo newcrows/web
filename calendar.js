@@ -1,761 +1,468 @@
-/* DATE OBJECT EXTENSIONS */
-
-//returns KW of the date
-Date.prototype.getWeek = function() {
-    var date = new Date(this.getTime());
-    date.setHours(0, 0, 0, 0);
-    // Thursday in current week decides the year.
-    date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
-    // January 4 is always in week 1.
-    var week1 = new Date(date.getFullYear(), 0, 4);
-    // Adjust to Thursday in week 1 and count number of weeks from date to week1.
-    return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000
-                           - 3 + (week1.getDay() + 6) % 7) / 7);
+let MODES = {
+    MONTH: 0,
+    WEEK: 1,    //will auto-adapt to three days when on mobile
+    DAY: 2
 }
 
-// Returns the four-digit year corresponding to the ISO week of the date.
-Date.prototype.getWeekYear = function() {
-    var date = new Date(this.getTime());
-    date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
-    return date.getFullYear();
-}
-
-//mode constants
-let MODE_MONTH = 0;
-let MODE_WEEK = 1;
-let MODE_THREE_DAYS = 2;
-let MODE_DAY = 3;
-
-//first hour of day offset and px_height per hour
 let PX_PER_HOUR = 88;
 let FIRST_HOUR_OF_DAY = 8;
 
-//date related constants
-let MONTHS = [
-    "Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"
-];
-let WEEKDAYS = [
-    "So","Mo","Di","Mi","Do","Fr","Sa"
-];
-let MS_PER_DAY = 1000 * 60 * 60 * 24;
+function Calendar(container, strip) {
+    //variables
+    this.container = container; //the container used as calendar
+    this.strip = strip;         //the strip displaying calendars currently shown date, if any
+    this.data = new DateMap();  //the data that populates this calendar
+    this.now = new Date(2017,11,14,10);      //the date calendar recognizes as "now" (date when index = 0)
+    this.mode = -1;
+    this.pager = new ViewPager(container);  //bounds null, callbacks null
 
-//a full calendar instance
-function Calendar(container, actionCallback, filterCallback, mode, data, strip, anchor) { 
-    this.container = container;
-    container.classList.add("vp-calendar");
-
-    //calendar state
-    this.data = data ? data : new DateMap();      //the data backing this calendar
-    this.mode = -1;                               //setMode(..) is called later in constructor, so give this an invalid mode
-    this.anchor = anchor ? anchor : new Date();   //use Date.NOW as default anchor
-    this.strip = strip;                           //calendar strip displaying current date
+    /* MOCK DATA FOR TESTING */
+    this.data.setUnix(this.now.toUnix(), ["coral","(90 Min) Theorie Thema 5",5400]);
+    this.data.setUnix(this.now.toUnix() + 3600 * 2, ["cornflowerblue","(45 Min) Fahren",2700]);
+    this.data.setUnix(this.now.toUnix() + 3600 * 3, ["#4CAF50","(90 Min) Fahren Autobahn",5400]);
+    this.data.setUnix(this.now.toUnix() + 3600 * 24, ["gray","Buchbar",2700]);
 
     /* GETTERS / SETTERS */
-
-    //set current mode, if preserve == true, convert index between modes
-    //if adjustPreserve is !null, add it to usedDate's current date before calculating new index
-    this.setMode = function(mode, preserve, adjustPreserve) {
-        //if already in mode, return
-        if (mode == this.mode)
+    this.setMode = function(mode) {
+        //already in target mode, return
+        if (this.mode == mode)
             return;
 
-        //load template for given mode or throw
-        var template;
-        switch(mode) {
-            case MODE_MONTH:
-                template = calendarMonthTemplate();
-                break;
-            case MODE_WEEK:
-                template = calendarWeekTemplate();
-                break;
-            case MODE_THREE_DAYS:
-                template = calendarThreeDaysTemplate();
-                break;
-            case MODE_DAY:
-                template = calendarDayTemplate();
-                break;
-            default:
-                throw "Invalid Mode"
-                   }
-
-        //keep previous date range in view if preserve == true
-        if (preserve) {
-            //get used date for old mode at index (fix=true only has effect in MODE_MONTH)
-            //only fix if date will not be adjusted
-            var usedDate = this.dateForIndex(this.getIndex(), this.mode, adjustPreserve ? false : true);
-
-            if (adjustPreserve)
-                usedDate.setDate(usedDate.getDate() + adjustPreserve);
-
-            //set corresponding index in new mode
-            var newIdx = this.indexForDate(usedDate, mode);
-
-            //noRebind=true
-            this.setIndex(newIdx, true);
-        }
-
-        //update mode internally
+        //update mode
         this.mode = mode;
 
-        //manually call onChange(getIndex()) once, to update calendar strip to current day/mode
-        this.onChange(this.getIndex());
+        //set callbacks for mode
+        this.setCallbacks(mode);
 
-        //set template for pager
-        console.log("setTemplate");
-        this.pager.setTemplate(template);
-    };
+        //set template based on mode -> this rebinds all pages
+        this.setTemplates(mode);
+
+        //invoke pager.onChange to stay in sync [strip updates, etc]
+        this.pager.onChange(this.getIndex());
+    }
 
     this.getMode = function() {
         return this.mode;
     }
 
-    //this triggers rebindAll()
-    this.setAnchor = function(anchor) {
-        this.anchor = anchor;
-        console.log("rebindAll");
-        this.pager.rebindAll();
-    };
-
-    this.getAnchor = function() {
-        return this.anchor;
-    }
-
-    this.getData = function() {
-        return this.data;
-    }
-
-    //just delegate setIndex
-    this.setIndex = function(newIndex, noRebind) {
-        //if noRebind == true, set index directly instead of invoking pager.setIndex() to avoid rebinding
-        if (noRebind) {
-            this.pager.index = newIndex;
-            return;
-        }
-        console.log("setIndex => " + newIndex);
-        this.pager.setIndex(newIndex);
-    }
-
-    //just delegate getIndex
-    this.getIndex = function() {
-        return this.pager.getIndex();
-    }
-
-    //TODO: finish impl
-    //delegate data insertion so shown pages can repaint
-    this.addData = function(unix, data) {
-        //update backing data
-        this.data.setUnix(unix, data);
-
-        //grab page added data will show on, if loaded
-        var page = this.pageFromUnix(unix);
-
-        //if page is not loaded, return
-        if (!page)
-            return;
-
-        //obtain meta for panel creation
-        var meta = this.metaForPanel(this.mode);
-
-        //TODO: fix the column index (right now is 0)
-        //create the panel
-        var shortUnix = -1 //fix this too!! Extract intra-day unix from full day unix here
-        var panel = this.panelFromValue([shortUnix, data], meta.modeStr, meta.lim, 0);
-
-        console.log("addData => page is loaded, appending data");
-    };
-
-    //TODO: impl
-    //delegate data update so shown pages can repaint
-    this.changeData = function(unix, newData) {
-        //update backing data -> this replaces data with same unix
-        this.data.setUnix(unix, newData);
-
-        //grab page added data will show on, if loaded
-        var page = this.pageFromUnix(unix);
-
-        //if page is not loaded, return
-        if (!page)
-            return;
-
-        //TODO: update item in page here
-    };
-
-    //TODO: impl
-    //delegate data removal so shown pages can repaint
-    this.removeData = function(unix) {
-        //delete removed item from backing data
-        this.data.deleteUnix(unix);
-
-        //grab page added data was show on, if loaded
-        var page = this.pageFromUnix(unix);
-
-        //if page is not loaded, return
-        if (!page)
-            return;
-
-        //TODO: remove item from page here
-    };
-
     /* LISTENERS */
 
-    //when dimensions change from mobile->desktop or desktop->mobile
-    window.addEventListener("dimension_changed", function(e) {
+    //listen for dimension changes
+    addEventListener("dimension_changed", function() {
+        //just reload pager when dimensions change
+        var mode = this.getMode();
 
-        //fix mode for current isMobile() state
-        var mode = calendarFixMode(this.mode);
+        //if mode is MODE.WEEK, recalculate index between WEEK and 3-days
+        if (mode == MODES.WEEK) {
+            //get index
+            var index = this.getIndex();
 
-        //adapt mode, preserve shown date
-        this.setMode(mode, true);
+            //get date for index BEFORE dimensions changed
+            var date = isMobile() ? this.weekForIndex(index) : this.threeDaysForIndex(index);
 
-        //when in month mode, rebind all because content text depends on isMobile() state
-        if (mode == MODE_MONTH) {
-            console.log("rebindAll");
-            this.pager.rebindAll();
+            //get index for date AFTER dimensions changed
+            index = isMobile() ? this.indexForThreeDays(date, true) : this.indexForWeek(date);
+
+            //apply new index without rebinding
+            this.setIndex(index, true);
+
+            //invoke pager.onChange to stay in sync [strip changes between week/3-days]
+            this.pager.onChange(this.getIndex());
         }
+
+        this.setTemplates(mode); 
     }.bind(this));
 
-    /* TRIGGERS */
-
-    //call this when data changed outside of the scope of this Object
-    this.notifyData = function() {
-        //for now, just rebind all pages
-        console.log("rebindAll");
-        this.pager.rebindAll();
-    }
-
-    //just delegate pagination
-    this.next = function() {
-        console.log("next");
-        this.pager.next();
-    }
-
-    //just delegate pagination
-    this.previous = function() {
-        console.log("previous");
-        this.pager.previous();
-    }
-
-    /* CALLBACKS */
-
-    //return wether or not to show items, based on their content
-    this.filter = filterCallback ? filterCallback : function(value) {
-        console.log("filter => " + value);
-        return true;
-    };
-
-    //return wether a click was consumed or not (action outside of calendar was taken)
-    this.action = actionCallback ? actionCallback : function(e, mode) {
-        console.log("action => " + e.target.className + ":" + mode);
-        return false;   //don't consume click event
-    };
-
-    /* IMPLEMENTATION DETAIL */
-
-    //get page that contains unix date, or null if not loaded
-    this.pageFromUnix = function(unix) {
-        //create date from unix
-        var date = new Date(unix * 1000);
-
-        //get index for date
-        var idx = this.indexForDate(date, this.mode);
-
-        //return page if loaded, otherwise return null
-        return this.pager.getPage(idx);
-    }
-
-    //bind data to a week-, 3-day or day-page
-    this.onBindWeekOrDays = function(page, index) {
-        var date = this.dateForIndex(index, this.mode);
-
-        //var grab Date.NOW
-        var now = new Date();
-
-        //grab headers
-        var headers = page.firstElementChild;
-
-        //grab content
-        var content = page.lastElementChild.lastElementChild;
-
-        //clear content
-        content.innerHTML = "";
-
-        //TODO: switch instead of if
-        //loop through week
-        var meta = this.metaForPanel(this.mode);
-        for (var c = 0; c < meta.lim; c++) {
-            var pDate = date.getDate();
-
-            //refresh current day of week's header
-            var header = headers.children[c];
-            header.innerText = WEEKDAYS[date.getDay()] + ", " + pDate;
-
-            //if NOW, mark it blue
-            if (areDatesEqual(date, now))
-                header.classList.add("calendar-now")
-            else
-                header.classList.remove("calendar-now");
-
-            //load content for current day
-            var pData = this.data.getUnixAll(this.toUnix(date));
-
-            //if data exists, append it
-            if (pData) {
-                header.innerText = header.innerText + "[...]";    //indicate there is data
-
-                var it = pData.entries();
-                var next = it.next();
-                while(!next.done) {
-                    var val = next.value;
-                    if (this.filter(val))
-                        content.appendChild(this.panelFromValue(val, meta.modeStr, meta.lim, c));
-
-                    /*LOGICAL BLOCK START
-
-                    var meta = val[1];
-                    var time = this.fromShortUnix(val[0]) + " - " + this.fromShortUnix(val[0] + meta[2]);
-
-                    var color = meta[0];
-                    var text = meta[1];
-                    var duration = meta[2];
-
-                    //create panel
-                    var panel = calendarCreatePanel("calendar-panel-" + modeStr + " card",
-                                                    time,
-                                                    color,
-                                                    text);
-
-                    //position panel
-                    var unix = val[0];
-                    var off = this.unixToOffset(unix);
-                    panel.style.top = off.px + "px";
-                    var over = off.backward ? -1 : 0;
-                    panel.style.left = "calc(100% / " + lim + " * " + (c+over) + ")";
-                    panel.style.height = this.unixToPx(duration) + "px";
-
-                    content.appendChild(panel);
-
-                    //LOGICAL BLOCK END */                    
-
-                    next = it.next();
-                }
-            }
-
-            //increment date
-            date.setDate(pDate + 1);
-        }
-    }
-
-    //get lim and modeStr used in panel creation for mode
-    this.metaForPanel = function(mode) {
-        var lim, modeStr;
-        if (this.mode == MODE_WEEK) {
-            lim = 7;
-            modeStr = "week";
-        } else if (this.mode == MODE_THREE_DAYS) {
-            lim = 3;
-            modeStr = "3-days";
-        } else if (this.mode == MODE_DAY) {
-            lim = 1;
-            modeStr = "day";
-        }
-
-        return {lim: lim, modeStr: modeStr};
-    }
-
-    //create a panel for week, 3-day, day modes
-    //params: value=[unix, data] modeStr=class suffix for mode, lim=column count for mode, c=current column
-    this.panelFromValue = function(val, modeStr, lim, c) {
-        var meta = val[1];
-        var time = this.fromShortUnix(val[0]) + " - " + this.fromShortUnix(val[0] + meta[2]);
-
-        var color = meta[0];
-        var text = meta[1];
-        var duration = meta[2];
-
-        //create panel
-        var panel = calendarCreatePanel("calendar-panel-" + modeStr + " card",
-                                        time,
-                                        color,
-                                        text);
-
-        //position panel
-        var unix = val[0];
-        var off = this.unixToOffset(unix);
-        panel.style.top = off.px + "px";
-        var over = off.backward ? -1 : 0;
-        panel.style.left = "calc(100% / " + lim + " * " + (c+over) + ")";
-        panel.style.height = this.unixToPx(duration) + "px";
-
-        //return the new panel
-        return panel;
-    }
-
-    //bind data to a month page
+    /* PAGER CALLBACKS FOR MODE = MONTH */
     this.onBindMonth = function(page, index) {
-        //get first date for page
-        var date = this.dateForIndex(index, this.mode);
-        var displayDate = this.displayDate(date);
+        //get date representing month to bind, depending on Calendar.now
+        //TODO: also make it depend on isMobile() -> 3-days when in mobile
+        var date = this.monthForIndex(index);
 
-        //grab Date.NOW
-        var now = new Date();
+        //grab display month, to gray out panels on bounding months
+        var month = date.displayMonth();
 
-        //grab page content
+        //normalize date to first monday before month
+        date = date.mondayBeforeMonth();
+
         var content = page.lastElementChild;
-
-        //loop through month panels to set their respective data
         var panel = content.firstElementChild;
-        while (panel) {
-            var pDate = date.getDate();
-
-            if (areDatesEqual(date, now))
-                panel.classList.add("calendar-now");
-            else
-                panel.classList.remove("calendar-now");
-
-            //grab the section
-            var section = panel.firstElementChild;
-
-            //grab strips
-            var strip = section.lastElementChild;
-
-            //clear strips
-            strip.innerHTML = "";
-
-            //get panel content
-            var pContent = panel.lastElementChild;
-
-            //clear panel content
-            pContent.innerText = "";
-
-            //grab data for full day
-            var pData = this.data.getUnixAll(this.toUnix(date));
-
-            //if data for day, apply it
-            if (pData) {
-                //size holder
-                var size = 0;
-
-                //prepare to store colors
-                var colors = [];
-
-                //get entries iterator for pData
-                var it = pData.entries();
-
-                //iterate pData to grab colors
-                var next = it.next();
-                while(!next.done) {
-                    //only count/use item if filter returns true
-                    if (this.filter(next.value)) {
-                        var color = next.value[1][0];
-
-                        if (!colors.includes(color)) {
-                            colors.push(color);
-
-                            var point = newDiv("calendar-point");
-                            point.style.background = color;
-
-                            strip.appendChild(point);
-                        }
-
-                        size++;
-                    }
-                    next = it.next();
-                } 
-
-                //set panel content (Termine-count) depending on isMobile()
-                if (size > 0)
-                    pContent.innerText = isMobile() ? "" : (size + " Termin" + (size > 1 ? "e" : ""));
-            }
-
-            //set date of month on panel
-            var pEle = section.firstElementChild;
-            pEle.innerText = pDate + ".";
-
-            //apply disabled class if not displayMonth
-            if (date.getMonth() == displayDate[0])
+        while(panel) {            
+            //disable panel when not in display month
+            if (date.getMonth() == month)
                 panel.classList.remove("calendar-disabled");
             else
                 panel.classList.add("calendar-disabled");
 
-            //grab next date and panel
-            date.setDate(pDate + 1);
+            //mark panel with .calendar-now when date of panel == Date.NOW
+            if (this.now.isEqual(date))
+                panel.classList.add("calendar-now");
+            else
+                panel.classList.remove("calendar-now");
+
+            //grab section
+            var section = panel.firstElementChild;
+
+            //set date holder element
+            section.firstElementChild.innerText = date.getDate() + ".";
+
+            //get data for day, if any
+            var data = this.data.getUnixAll(date.toUnix()).value;
+
+            //set strips depending on items for date, returns count of items
+            var count = this.stripsForMonth(section.lastElementChild, data);
+
+            //set panel content, depending on count
+            this.contentForMonth(panel.lastElementChild, count);
+
+            //increment date by one
+            date.setDate(date.getDate() + 1);
+
+            //grab next panel
             panel = panel.nextElementSibling;
         }
-
-    };
-
-    //convert unix to offset in WEEK / 3-DAY / DAY page
-    this.unixToOffset = function(unix) {
-        var px = this.unixToPx(unix);
-
-        //apply first hour of day offset
-        px -= PX_PER_HOUR * FIRST_HOUR_OF_DAY;            
-
-        return {px: px < 0 ? px + PX_PER_HOUR * 24 : px, backward: px < 0};
     }
 
-    //convert unix to px
-    this.unixToPx = function(unix) {
-        return 88 * unix / 3600 ;
+    this.onChangeMonth = function(index) {
+        if (!strip)
+            return;
+
+        var date = this.monthForIndex(index);
+        var month = date.displayMonth();
+
+        strip.innerText = MONTHS[month] + " " + date.getFullYear();
     }
 
-    //convert a date to unix timestamp
-    this.toUnix = function(date) {
-        return Math.floor(date.getTime() / 1000);
-    }
+    this.onCreateMonth = function(page) {
+        var content = page.lastElementChild;
 
-    //convert a short unix timestamp to hours:minutes string
-    this.fromShortUnix = function(unix) {
-        var hours = Math.floor(unix / 3600);
-        var minutes = Math.floor((unix - hours * 3600) / 60);
-
-        return (hours < 10 ? "0" : "") + hours + ":" + (minutes < 10 ? "0" : "") + minutes;
-    }
-
-    //display the correct month, year when in month mode
-    this.displayDate = function(date) {
-        //adjust current display month, year
-        var month = date.getMonth() + (date.getDate() == 1 ? 0 : 1);
-        var year = date.getFullYear();
-
-        //fix overflow
-        year += month > 11 ? 1 : 0;
-        month = month > 11 ? 0 : month;
-
-        //return month, year
-        return [month, year];
-    }
-
-    //get first date for index in passed mode
-    this.dateForIndex = function(index, mode, fix) {
-        //copy anchor date
-        var date = new Date(this.anchor);
-
-        //adjust date based on mode
-        switch(mode) {
-            case MODE_MONTH:
-                date.setMonth(date.getMonth() + index);
-                date.setDate(1);
-                if (date.getDay() != 0)
-                    date.setDate(date.getDate() - date.getDay() + 1);
-
-                //dirty fix -> maybe fix the fix? :D
-                if (fix && date.getDate() > 7)
-                    date.setDate(date.getDate() + 7);
-                break;
-            case MODE_WEEK:
-                date.setDate(date.getDate() + index * 7);
-                date.setDate(date.getDate() - date.getDay() + 1);
-                break;
-            case MODE_THREE_DAYS:
-                date.setDate(date.getDate() + index * 3);
-                break;
-            case MODE_DAY:
-                date.setDate(date.getDate() + index);
-                break;
-            default:
-                throw "Invalid Mode";
-                   }
-
-        //return date
-        return date;
-    }
-
-    //get index for a date in passed mode
-    this.indexForDate = function(date, mode) {
-        //get anchor date for passed mode (fix=true, has no effect other than in month mode)
-        var anchorInMode = this.dateForIndex(0, mode, true);
-
-        //find the index for passed mode
-        var idx;
-        if (mode == MODE_MONTH) {
-            //just the diff in years * 12 + diff in months
-            var diffY = date.getFullYear() - anchorInMode.getFullYear();
-            var diffM = date.getMonth() - anchorInMode.getMonth();
-
-            idx = (diffY * 12) + diffM;
-        } else {
-            //get diff in days
-            var diffD = dateDiffInDays(date, anchorInMode);
-
-            if (mode == MODE_WEEK)  //divide by 7 (week has 7 days)
-                idx = Math.floor(diffD / 7);
-            else if (mode == MODE_THREE_DAYS)   //divide by 3 (mode always shows 3 days)
-                idx = Math.floor(diffD / 3);
-            else if (mode == MODE_DAY)  //just take raw diffD because index == diffD anyway
-                idx = diffD;
+        //give the panels a panelId to identify them by
+        var panel = content.firstElementChild;
+        var id = 0;
+        while(panel) {
+            panel.panelId = id++;
+            panel = panel.nextElementSibling;
         }
-
-        return idx;
     }
 
-    //traverse up the DOM till element with passed class found or no higher parent
-    this.findTraverseUp = function(target, clazz) {
-        while(target && !target.classList.contains(clazz)) {
-            target = target.parentElement;
+    this.onClickMonth = function(e) {
+        var target = findTraverseUp(e.target, "calendar-panel-month");
+        if (!target)
+            return;
+
+        //get month for index as date
+        var date = this.monthForIndex(this.getIndex());
+
+        //find first monday currently shown
+        date = date.mondayBeforeMonth();
+
+        //adjust date to match clicked panel
+        date.setDate(date.getDate() + target.panelId);
+
+        //get new index -> distance from Date.NOW to clicked date in weeks / 3-days
+        var newIndex = isMobile ? this.indexForThreeDays(date) : this.indexForWeek(date);
+
+        //set new index, without rebinding pages
+        this.setIndex(newIndex, true);
+
+        //change mode to WEEK -> this rebindsAll pages at new mode:index
+        this.setMode(MODES.WEEK);
+    }
+
+    /* PAGER CALLBACKS FOR MODE = WEEK */
+    this.onBindWeek = function(page, index) {
+        //get date representing week
+        var date = isMobile() ? this.threeDaysForIndex(index) : this.weekForIndex(index);
+
+        //grab headers
+        var headers = page.firstElementChild;
+
+        //get wrapper containing content[time of day strips, column vertical lines], content
+        var wrapper = page.lastElementChild;
+
+        //grab content
+        var content = wrapper.lastElementChild;
+
+        //clear content
+        content.innerText = "";
+
+        //grab columnCount, depending on isMobile()
+        var columnCount = isMobile() ? 3 : 7
+
+        //loop through columns
+        for (var column = 0; column < columnCount; column++) {            
+            //get data for current day
+            var data = this.data.getUnixAll(date.toUnix());
+
+            //append data to content at column
+            this.panelsForWeek(content, data, column);
+
+            //set header for current column, show [...] if data exists for this column
+            this.headerForWeek(headers.children[column], date, data.value);
+
+            //increment date by one day
+            date.setDate(date.getDate() + 1);
         }
-
-        return target;
     }
 
-    /* VIEWPAGER CALLBACKS */
-
-    //bind content for a full page
-    this.onBind = function(page, index) {
-        switch (this.mode) {
-            case MODE_MONTH:
-                this.onBindMonth(page, index);
-                break;
-            case MODE_WEEK:
-            case MODE_THREE_DAYS:
-            case MODE_DAY:
-                this.onBindWeekOrDays(page, index);
-                break;
-            default:
-                throw "Invalid Mode";
-                         } 
-
-        console.log("onBind => " + index);
-    }.bind(this);
-
-    //update strip if index changes
-    this.onChange = function(newIndex) {
-        //if no strip, return
+    this.onChangeWeek = function(index) {
         if (!this.strip)
             return;
 
-        //grab date
-        var date = this.dateForIndex(this.pager.getIndex(), this.mode);
+        var date = isMobile() ? this.threeDaysForIndex(index) : this.weekForIndex(index);
 
-        //the dateStr to display based on mode
-        var dateStr;
-        switch (this.mode) {
-            case MODE_MONTH:
-                var displayDate = this.displayDate(date);
-                dateStr = MONTHS[displayDate[0]] + " " + displayDate[1];
-                break;
-            case MODE_WEEK:
-                dateStr = "KW " + date.getWeek() + " (" + MONTHS[date.getMonth()].substr(0,3) + ") " + date.getWeekYear();
-                break;
-            case MODE_THREE_DAYS:
-                var fYear = date.getFullYear();
-                dateStr = date.getDate() + "." + (date.getMonth() + 1) + ". - ";
-                date.setDate(date.getDate() + 2);
-                dateStr += date.getDate() + "." + (date.getMonth() + 1) + "." + fYear;
-                break;
-            case MODE_DAY:
-                dateStr = date.getDate() + ". " + MONTHS[date.getMonth()].substr(0,3) + " " + date.getFullYear();
-                break;
-            default:
-                throw "Invalid Mode";
-                         }
+        var text;
+        if (isMobile()) {
+            var threeDayStart = date.getDate() + "." + (date.getMonth()+1) + ". - ";
+            var fullYear = date.getFullYear();
+            date.setDate(date.getDate() + 2);
+            var threeDayEnd = date.getDate() + "." + (date.getMonth()+1) + "." + fullYear; 
 
-        //set strip text
-        this.strip.innerText = dateStr;
-    }.bind(this);
-
-    //attach metadata to template clones
-    this.onCreate = function(page) {
-        switch (this.mode) {
-            case MODE_MONTH:
-                calendarOnCreateMonth(page);
-                break;
-            case MODE_WEEK:
-            case MODE_THREE_DAYS:
-                calendarOnCreateWeekOr3Days(page);
-                break;
-            case MODE_DAY:
-                //nothing to do here, at least for now
-                break;
-            default:
-                throw "Invalid Mode";
-                         }
-    }.bind(this);
-
-    //navigate through calendar, or invoke actions
-    this.onClick = function(e) {
-        //check if action callback consumed the click event
-        if (this.action(e, this.mode))
-            return;
-
-        //default navigation
-
-        //when clicked on month, go to week / 3-days
-        if (this.mode == MODE_MONTH) {
-            var newMode = calendarFixMode(MODE_WEEK);
-
-            var target = this.findTraverseUp(e.target, "calendar-panel-month");
-            if (target) {
-                //get the month panel's id
-                var panelId = target.panelId;
-
-                //use panel id as adjustPreserve
-                this.setMode(newMode, true, panelId);
-            }
+            text = threeDayStart + threeDayEnd;
+        } else {
+            text = "KW" + date.getWeek() + " (" + MONTHS[date.getMonth()].substr(0,3) + ") " + date.getWeekYear();
         }
 
-        //when clicked on header in week / 3-days, go to day
-        if (this.mode == MODE_WEEK || this.mode == MODE_THREE_DAYS) {
-            //obtain click target
-            var target = this.findTraverseUp(e.target, "calendar-header-week");
+        this.strip.innerText = text;
+    }
+
+    this.onCreateWeek = function(page) {
+        var headers = page.firstElementChild;
+
+        //give the headers ids to identify them by
+        var header = headers.firstElementChild;
+        var id = 0;
+        while(header) {
+            header.headerId = id++;
+            header = header.nextElementSibling;
+        }
+    }
+
+    this.onClickWeek = function(e) {
+        var target = findTraverseUp(e.target, "calendar-panel-week");
+        if (!target) {
+            target = findTraverseUp(e.target, "calendar-header-week");
             if (!target)
-                target = this.findTraverseUp(e.target, "calendar-header-3-days");
-            if (target) {
-                //get the header's id
-                var headerId = target.headerId;
-                
-                //use header id as adjustPreserve, preserve=true to notify adjustPreserve might be set
-                this.setMode(MODE_DAY, true, headerId);
-                console.log(e.target.className);
-            }
-        }
-    }.bind(this);
+                return;
 
-    //sync scroll state in WEEK_MODE, THREE_DAYS_MODE or DAY_MODE
-    this.onBeforeChange = function(oldIndex) {
-        //no need to sync scroll in month mode, so return
-        if (this.mode == MODE_MONTH)
+            //handle header clicks here
+            console.log("onClickWeek => " + target.headerId);
+        } else {
+
+            //handle item clicks here
+            console.log("onClickWeek => " + target.panelId);
+        }
+    }
+
+    /* PAGER TRIGGER DELEGATES */
+    this.notifyBind = function(index) {
+        this.pager.notifyBind();
+    }
+
+    this.next = function() {
+        this.pager.next();
+    }
+
+    this.previous = function() {
+        this.pager.previous();
+    }
+
+    this.rebindAll = function() {
+        this.pager.rebindAll();
+    }
+
+    /* PAGER GETTER / SETTER DELEGATES */
+    this.setBounds = function(bounds) {
+        this.pager.setBounds(bounds);
+    }
+
+    this.getBounds = function() {
+        return this.pager.getBounds();
+    }
+
+    this.setIndex = function(index, direct) {
+        //if direct == true, circumvent page rebinding that would occur if pager.setIndex(..) was called
+        if (direct)
+            this.pager.index = index;
+        else
+            this.pager.setIndex(index);
+    }
+
+    this.getIndex = function() {
+        return this.pager.getIndex();
+    }
+
+    this.getPages = function() {
+        return this.pager.getPages();
+    }
+
+    this.getPageIfLoaded = function(index) {
+        return this.pager.getPageIfLoaded(index);
+    }
+
+    this.setTemplate = function(template) {
+        this.pager.setTemplate(template);
+    }
+
+    this.getTemplate = function() {
+        return this.pager.getTemplate();
+    }
+
+    /* IMPLEMENTATION DETAIL */
+    this.setCallbacks = function(mode) {
+        switch(mode) {
+            case MODES.MONTH:
+                this.pager.onBind = this.onBindMonth.bind(this);
+                this.pager.onChange = this.onChangeMonth.bind(this);
+                this.pager.onCreate = this.onCreateMonth.bind(this);
+                this.pager.onClick = this.onClickMonth.bind(this);
+                return;
+            case MODES.WEEK:
+                this.pager.onBind = this.onBindWeek.bind(this);
+                this.pager.onChange = this.onChangeWeek.bind(this);
+                this.pager.onCreate = this.onCreateWeek.bind(this);
+                this.pager.onClick = this.onClickWeek.bind(this);
+                return;
+            default:
+                throw "Invalid Mode => " + mode;
+                   }
+    }
+
+    this.setTemplates = function(mode) {
+        switch(mode) {
+            case MODES.MONTH:
+                this.setTemplate(calMonthTemplate());
+                break;
+            case MODES.WEEK:
+                this.setTemplate(calWeekTemplate());
+                break;
+            default:
+                throw "Invalid Mode => " + mode;
+                   }
+    }
+
+    //returns date holding month for passed index
+    this.monthForIndex = function(index) {        
+        //date that will hold month for index
+        var date = new Date(this.now);
+        date.setMonth(date.getMonth() + index);
+
+        return date;
+    }
+
+    //creates stripe points for data, returns item count
+    this.stripsForMonth = function(strips, data) {
+        //clear strips
+        strips.innerText = "";
+
+        //if no data, return
+        if (!data)
             return;
 
-        //get content scroll state
-        var pages = this.pager.getPages();
-        var scrollTop = pages[0].lastElementChild.scrollTop;
+        //loop through data
+        var colors = [];
+        var it = data.values();
+        var next = it.next();
+        var count = 0;
+        while (!next.done) {
+            var color = next.value[0];
 
-        //sync content scroll state
-        pages[-1].lastElementChild.scrollTop = scrollTop;
-        pages[1].lastElementChild.scrollTop = scrollTop;
-    }.bind(this); 
+            //if no .point for color yet, create one and append to strips
+            if (!colors.includes(color)) {
+                colors.push(color)
+                strips.appendChild(calPoint(color));
+            }
 
-    /* VIEWPAGER LINK */
+            //increment count
+            count++;
 
-    //create viewpager for this calendar
-    this.pager = new ViewPager(container,
-                               [-Infinity, Infinity],
-                               this.onBind,
-                               this.onChange,
-                               this.onCreate,
-                               this.onClick,
-                               this.onBeforeChange);
+            //grab next data item
+            next = it.next();
+        }
 
+        return count;
+    }    
 
-    //fix mode for current isMobile() state
-    mode = calendarFixMode(mode);
+    //set month panel content
+    this.contentForMonth = function(content, count) {
+        if (count > 0)
+            content.innerText = count + " Termin" + (count > 1 ? "e" : "");
+        else
+            content.innerText = "";
+    }
 
-    //kick of template creation and, subsequently, binding
-    this.setMode(mode ? mode : MODE_MONTH);
+    //returns date holding week for passed index
+    this.weekForIndex = function(index) {
+        //date that will hold week for index
+        var date = this.now.mondayOfWeek();
+        date.setDate(date.getDate() + index * 7);
+
+        return date;
+    }
+
+    //MODE.WEEK when on mobile becomes internal 3-day mode
+    this.threeDaysForIndex = function(index) {
+        var date = new Date(this.now);
+        date.setDate(date.getDate() + index * 3);
+
+        return date;
+    }
+
+    //fills one header at date, in week mode
+    this.headerForWeek = function(header, date, hasData) {
+        //mark header if date for header == Date.NOW
+        if (this.now.isEqual(date))
+            header.classList.add("calendar-now");
+        else
+            header.classList.remove("calendar-now");
+
+        //get day of week and date as day
+        var dow = date.getDay();
+        var day = date.getDate();
+
+        //fill current header
+        header.innerText = WEEKDAYS[dow] + ", " + day + "." + (hasData ? "[...]" : "");
+    }
+
+    //create panels for week, at column, based on data
+    this.panelsForWeek = function(content, data, column) {
+        if (!data.value)
+            return;
+
+        var unixBase = data.key;    //unix for day of week, at hh,mm,ss = 0
+
+        var it = data.value.entries();
+        var next = it.next();
+        while(!next.done) {
+            //grab next item data
+            var value = next.value;
+
+            //get some required values
+            var unix = unixBase + value[0];
+            var meta = value[1];
+
+            //append new panel for item data to content
+            content.appendChild(calWeekPanel(unix, value[0], meta, column));
+
+            //grab next data item
+            next = it.next();
+        }
+    }
+
+    //return index for date in week mode
+    this.indexForWeek = function(date) {
+        return this.now.weeksTo(date); 
+    }
+
+    //return index for date in 3-day [internal] mode -> this rolls around from [di..do] to [do..sa] because 7/3 has rest
+    this.indexForThreeDays = function(date, startMonday) {
+        var daysTo = startMonday ? this.now.mondayOfWeek().daysTo(date) : this.now.daysTo(date);
+
+        return Math.floor(daysTo / 3);
+    }
 }
 
-//fix mode depending on isMobile()
-function calendarFixMode(mode) {
-    if (isMobile() && mode == MODE_WEEK)
-        mode = MODE_THREE_DAYS;
-    else if (!isMobile() && mode == MODE_THREE_DAYS)
-        mode = MODE_WEEK;
-
-    return mode;
-}
-
-function calendarMonthTemplate() {
+function calMonthTemplate() {
     //the container
     var template = newDiv("");
 
@@ -771,7 +478,7 @@ function calendarMonthTemplate() {
     //the content, fill with panels
     var content = newDiv("calendar-content-month");
     for (var c = 0; c < 42; c++) {
-        content.appendChild(calendarCreatePanel("calendar-panel-month"));
+        content.appendChild(calMonthPanel());
     }
 
     //append to container
@@ -782,72 +489,47 @@ function calendarMonthTemplate() {
     return template;
 }
 
-//create panel with given className [optional: time, color, text]
-function calendarCreatePanel(className, time, color, text) {
-    var panel = newDiv(className);        
+function calMonthPanel() {
+    //the panel
+    var panel = newDiv("calendar-panel-month");        
 
+    //the section with date of panel | strips to hold .point items
     var section = newDiv("fill");
 
-    var timeEle = newDiv("calendar-panel-date");
-    if (time)
-        timeEle.innerText = time;
-    if (color) {
-        timeEle.style.color = color;
-        panel.style.borderTop = "2px solid " + color;
-    }
+    //the inner elements
+    var date = newDiv("calendar-panel-date");
+    var text = newDiv("calendar-panel-inner");
+    var strips = newDiv("calendar-panel-strip");
 
-    var textEle = newDiv("calendar-panel-inner");
-    if (text)
-        textEle.innerText = text;
+    //append to section
+    section.appendChild(date);
+    section.appendChild(strips);
 
-
-    section.appendChild(timeEle);
-
-    //if in MODE_MONTH, append strip to display .point items
-    if (!color) {
-        var strips = newDiv("calendar-panel-strip");
-        section.appendChild(strips);
-    }
+    //append to panel
     panel.appendChild(section);
+    panel.appendChild(text);
 
-    panel.appendChild(textEle);
-
+    //return panel
     return panel;
 }
 
-function calendarOnCreateMonth(page) {
-    //get content element
-    var content = page.lastElementChild;
+function calPoint(color) {
+    var point = newDiv("calendar-point");
+    point.style.background = color;
 
-    //loop through its children and attach panelId
-    var c = 0;
-    var child = content.firstElementChild;
-    while (child) {
-        child.panelId = c++;
-        child = child.nextElementSibling;
-    }
+    return point;
 }
 
-function calendarOnCreateWeekOr3Days(page) {
-    //get headers element
-    var headers = page.firstElementChild;
-    
-    //loop through its children and attach headerId
-    var c = 0;
-    var child = headers.firstElementChild;
-    while (child) {
-        child.headerId = c++;
-        child = child.nextElementSibling;
-    }
-}
+function calWeekTemplate() {
+    var classPostfix = isMobile() ? "3-days" : "week";
+    var headerCount = isMobile() ? 3 : 7;
 
-function calendarWeekTemplate() {
     var template = newDiv("");
 
     //the headers
     var headers = newDiv("calendar-headers");
-    for (var c = 0; c < 7; c++) {
-        var header = newDiv("calendar-header-week");
+    for (var c = 0; c < headerCount; c++) {
+        var header = newDiv("calendar-header-" + classPostfix);
 
         headers.appendChild(header);
     }
@@ -856,20 +538,20 @@ function calendarWeekTemplate() {
     var wrapper = newDiv("calendar-content-week-or-days-wrapper");
 
     //the content
-    var content = newDiv("calendar-content-week");
+    var content = newDiv("calendar-content-" + classPostfix);
 
     //the columns (only for borders)
     for (var c = 0; c < 7; c++)
-        content.appendChild(newDiv("calendar-column-week"));
+        content.appendChild(newDiv("calendar-column-" + classPostfix));
 
     //append the ToD strips
-    calendarTimeOfDayStrips(content);
+    calWeekTimeOfDays(content);
 
     //append to wrapper
     wrapper.appendChild(content);
 
     //inner content holds items, so that TimeOfDay strips don't get cleared
-    var contentInner = newDiv("calendar-content-week");
+    var contentInner = newDiv("calendar-content-" + classPostfix);
     wrapper.appendChild(contentInner);
 
     //append to container
@@ -880,84 +562,9 @@ function calendarWeekTemplate() {
     return template;
 }
 
-function calendarThreeDaysTemplate() {
-    var template = newDiv("");
-
-    //the headers
-    var headers = newDiv("calendar-headers");
-    for (var c = 0; c < 3; c++) {
-        var header = newDiv("calendar-header-3-days");
-        header.innerText = "H" + c;
-
-        headers.appendChild(header);
-    }
-
-    //the content wrapper
-    var wrapper = newDiv("calendar-content-week-or-days-wrapper");
-
-    //the content
-    var content = newDiv("calendar-content-3-days");
-
-    //the columns (only for borders)
-    for (var c = 0; c < 3; c++)
-        content.appendChild(newDiv("calendar-column-3-days"));
-
-    //append the ToD strips
-    calendarTimeOfDayStrips(content);
-
-    //append to wrapper
-    wrapper.appendChild(content);
-
-    //actual content holder
-    var innerContent = newDiv("calendar-content-3-days");
-    wrapper.appendChild(innerContent);
-
-    //append to container
-    template.appendChild(headers);
-    template.appendChild(wrapper);
-
-    //return container
-    return template;
-}
-
-function calendarDayTemplate() {
-    var template = newDiv("");
-
-    //the headers
-    var headers = newDiv("calendar-headers");
-
-    //the sole header
-    var header = newDiv("calendar-header-day");
-    header.innerText = "Header";
-
-    headers.appendChild(header);
-
-    //the content wrapper
-    var wrapper = newDiv("calendar-content-week-or-days-wrapper");
-
-    //the content
-    var content = newDiv("calendar-content-day");
-
-    //append the ToD strips
-    calendarTimeOfDayStrips(content);
-
-    //append to wrapper
-    wrapper.appendChild(content);
-
-    var innerContent = newDiv("calendar-content-day");
-    wrapper.appendChild(innerContent);
-
-    //append to container
-    template.appendChild(headers);
-    template.appendChild(wrapper);
-
-    //return container
-    return template;
-}
-
-function calendarTimeOfDayStrips(content) {
+function calWeekTimeOfDays(content) {
     //time of day strips to the left of content
-    for (var c = 0; c < 24; c++) {
+    for (var c = 0; c < (24 - FIRST_HOUR_OF_DAY); c++) {
         //create ToD element
         var timeOfDay = newDiv("calendar-time-of-day");
 
@@ -965,48 +572,93 @@ function calendarTimeOfDayStrips(content) {
         timeOfDay.style.top = (c * PX_PER_HOUR) + "px";
 
         //set its content
-        timeOfDay.innerText = calendarAsHours(c, FIRST_HOUR_OF_DAY);
+        timeOfDay.innerText = calWeekRowAsTime(c);
 
         content.appendChild(timeOfDay);
     }
 }
 
-//returns c as hour with off as offset [overflow rolls around]
-function calendarAsHours(c, off) {
-    c += off;
-    c = c > 23 ? c - 24 : c;
+function calWeekRowAsTime(row) {
+    row += FIRST_HOUR_OF_DAY;
+    row = row > 23 ? row - 24 : row;
 
-    return (c < 10 ? "0" : "") + c + ":00";
+    return (row < 10 ? "0" : "") + row + ":00";
 }
 
-/* CALENDAR FIREBASE - DEBUG ONLY */
+function calWeekPanel(unix, shortUnix, meta, column) {
+    //grab relevant variables
+    var color = meta[0];
+    var text = meta[1];
+    var duration = meta[2];
+    var time = calTimeFrom(shortUnix, duration);
 
-//get public.tasks ref handle
-var genericListener = database.ref('/tasks');
+    //depending on isMobile
+    var classPostfix = isMobile() ? "3-days" : "week";
 
-//TODO: specific event listeners 'add','change','remove'
-genericListener.on('value', parseTasks, parseTasksError);
+    //create panel
+    var panel = newDiv("card calendar-panel-" + classPostfix);
 
-function parseTasks(snapshot) { 
-    //grab calendar data and clear
-    var _calendarData = calendar.getData();
-    _calendarData.clear();
+    //attach panelId -> unix to identify it by (this is the full unixtime, not only intra-day)
+    panel.panelId = unix;
 
-    //load new items
-    snapshot.forEach(function(child) {
-        var childKey = child.key;
-        var childData = child.val();                   
+    //position and sizing
+    var widthMod = isMobile() ? 3 : 7;
+    panel.style.left = "calc(100% / " + widthMod + " * " + column + ")";
+    panel.style.top = calUnixToOffset(shortUnix) + "px";
+    panel.style.height = calUnixToPx(duration) + "px";
 
-        _calendarData.setUnix(childKey, childData);
-    });
+    //create section
+    var section = newDiv("fill");
 
-    //repaint pages
-    calendar.notifyData();
+    //create and style time element and panel-border-top
+    var timeEle = newDiv("calendar-panel-date");
+    timeEle.innerText = time;
+    timeEle.style.color = color;
+    panel.style.borderTop = "2px solid " + color;
+
+    //create content element and set text
+    var textEle = newDiv("calendar-panel-inner");
+    textEle.innerText = text;
+
+    //append time element to section
+    section.appendChild(timeEle);
+
+    //append section and content to panel
+    panel.appendChild(section);
+    panel.appendChild(textEle);
+
+    //return panel
+    return panel;
 }
 
-function parseTasksError(error) {
-    var errorCode = error.code;
-    var errorMessage = error.message;
+function calTimeFrom(unix, duration) {    
+    var start = calUnixTimeToStr(unix);
+    var end = calUnixTimeToStr(unix + duration);
 
-    console.log("fetch error => " + errorCode + ":" + errorMessage);
+    return start + " - " + end;
+}
+
+function calUnixTimeToStr(unix) {
+    var hhmm = calUnixToHHMM(unix);
+    return (hhmm.hours < 10 ? "0" : "") + hhmm.hours + (hhmm.minutes < 10 ? ":0" : ":") + hhmm.minutes;
+}
+
+function calUnixToHHMM(unix) {
+    var hours = Math.floor(unix / 3600);
+    var minutes = Math.floor((unix - (hours * 3600)) / 60);
+
+    return {hours: hours, minutes: minutes};
+}
+
+function calUnixToOffset(unix) {
+    var px = calUnixToPx(unix);
+
+    //apply first hour of day offset
+    px -= PX_PER_HOUR * FIRST_HOUR_OF_DAY;            
+
+    return px < 0 ? px + PX_PER_HOUR * 24 : px;
+}
+
+function calUnixToPx(unix) {
+    return PX_PER_HOUR * unix / 3600 ;
 }

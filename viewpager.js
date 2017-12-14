@@ -18,6 +18,9 @@ Copy this to your .css(
         box-sizing: border-box;
 
         transition: transform 0.4s ease;
+        overflow: hidden;
+    
+        will-change: transform, opacity;
     }
 
     .no-transition {
@@ -84,6 +87,9 @@ let SNAP_TRESHOLD = 80;
 function ViewPager(container, bounds, onBindCallback, onChangeCallback, onCreateCallback, onClickCallback, onBeforeChangeCallback) {
     this.container = container;
     container.classList.add("vp-container");
+    
+    //TESTING
+    this.pageWidth = container.offsetWidth;
 
     //pagination state
     this.bounds = bounds;   //get / set
@@ -107,27 +113,23 @@ function ViewPager(container, bounds, onBindCallback, onChangeCallback, onCreate
     container.addEventListener("touchstart", vpTouchStart.bind(this));
     container.addEventListener("touchmove", vpTouchMove.bind(this));
     container.addEventListener("touchend", vpTouchEnd.bind(this));
+    //TESTING
+    window.addEventListener("resize", function(e) {
+        this.pageWidth = container.offsetWidth;
+        this.resetTranslate();
+    }.bind(this));
 
     /* CALLBACKS */
-    this.onBind = onBindCallback ? onBindCallback :  function(page, index) {
-        console.log("onBind => " + page.className + ":" + index);
-    };
+    this.onBind = onBindCallback ? onBindCallback : noop();
     
-    this.onChange = onChangeCallback ? onChangeCallback : function(newIndex) {
-        console.log("onChange => " + newIndex);
-    };
+    this.onChange = onChangeCallback ? onChangeCallback : noop();
     
-    this.onCreate = onCreateCallback ? onCreateCallback : function(page) {
-        console.log("onCreate => " + page.className);
-    }
+    this.onCreate = onCreateCallback ? onCreateCallback : noop();
     
-    this.onClick = onClickCallback ? onClickCallback : function(e) {
-        console.log("onClick => " + e.target);
-    };
+    this.onClick = onClickCallback ? onClickCallback : noop();
     
-    this.onBeforeChange = onBeforeChangeCallback ? onBeforeChangeCallback : function(oldIndex) {
-        console.log("onBeforeChange => " + oldIndex);
-    };
+    //DISABLED
+    //this.onBeforeChange = onBeforeChangeCallback ? onBeforeChangeCallback : this.noop();
 
     /* TRIGGERS */
     //notify that page at index needs rebind (because backing data changed)
@@ -182,8 +184,7 @@ function ViewPager(container, bounds, onBindCallback, onChangeCallback, onCreate
         return this.pages;
     }
 
-    //return page, if loaded or null otherwise
-    this.getPage = function(index) {
+    this.getPageIfLoaded = function(index) {
         var which = index - this.index;
 
         if (Math.abs(which) > 1)
@@ -240,12 +241,16 @@ function ViewPager(container, bounds, onBindCallback, onChangeCallback, onCreate
     //reset translation of all pages to default (from -100% to 0% to +100%)
     this.resetTranslate = function() {
         for (var c = -1; c < 2; c++)
-            this.translate(this.pages[c], c*100, 0);
+            //TESTING
+            this.translate(this.pages[c], 0, c * this.pageWidth);
+            //this.translate(this.pages[c], c*100, 0);
     }
 
     //translate the page passed as arg by percent and px-offset
     this.translate = function(page, percent, px) {
-        page.style.transform = "translate(calc(" + percent + "% + " + px + "px))";
+        //TESTING
+        page.style.transform = "translate(" + px + "px)";
+        //page.style.transform = "translate(calc(" + percent + "% + " + px + "px))";
     }
 
     //snap to a direction
@@ -253,6 +258,10 @@ function ViewPager(container, bounds, onBindCallback, onChangeCallback, onCreate
         //enforce bounds
         if (!this.isInBounds(this.index + dir))
             return;
+        
+        //DISABLED
+        //notify callback with old index and old page order
+        //this.onBeforeChange(this.index);
 
         //grab pages array
         var pages = this.pages;
@@ -260,9 +269,6 @@ function ViewPager(container, bounds, onBindCallback, onChangeCallback, onCreate
         //set correct visibility for pages
         for (var c = -1; c < 2; c++)
             this.visible(pages[c], c != -dir || c == 0);
-        
-        //notify callback with old index
-        this.onBeforeChange(this.index);
 
         //reorder pages
         var hold = pages[0];
@@ -359,17 +365,20 @@ function vpOnSwipeMove(e) {
         //set flag
         this.isOverSlop = true;
 
+        //DISABLED
         //notify callback that index might change [pass old index]
-        this.onBeforeChange(this.index);
+        //this.onBeforeChange(this.index);
     }
 
     //decide wether page can swipe or would swipe out of bounds
-    if (!this.isOverSlop || dx > 0 && this.index == this.bounds[0] || dx < 0 && this.index == this.bounds[1])
+    if (!this.isOverSlop || this.bounds && (dx > 0 && this.index == this.bounds[0] || dx < 0 && this.index == this.bounds[1]))
         return;
 
     //set page translate values
     for (var c = -1; c < 2; c++)
-        this.translate(this.pages[c], c * 100, this.swipeDX);
+        //TESTING
+        this.translate(this.pages[c], 0, c * this.pageWidth + this.swipeDX);
+        //this.translate(this.pages[c], c * 100, this.swipeDX);
 }
 
 //swipe end
