@@ -48,6 +48,40 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
         return this.mode;
     }
 
+    /* TRIGGERS */
+    this.addPanel = function(unix, item) {
+        //grab unixtime as date object
+        var date = fromUnix(unix);
+
+        //add item to backing data
+        this.data.setUnix(unix, item);
+
+        //call current mode's add callback
+        this.addCall(date, unix, item);
+    }
+
+    this.updatePanel = function(unix, item) {
+        //grab unixtime as date object
+        var date = fromUnix(unix);
+
+        //add item to backing data
+        this.data.setUnix(unix, item);
+
+        //call current mode's add callback
+        this.updateCall(date, unix, item);
+    }
+
+    this.removePanel = function(unix) {
+        //grab unixtime as date object
+        var date = fromUnix(unix);
+
+        //add item to backing data
+        this.data.deleteUnix(unix);
+
+        //call current mode's add callback
+        this.removeCall(date, unix);
+    }
+
     /* CALLBACKS */
 
     this.onModeChange = onModeChangeCallback ? onModeChangeCallback : noop;
@@ -98,7 +132,8 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
 
         var content = page.lastElementChild;
         var panel = content.firstElementChild;
-        while(panel) {            
+        while(panel) { 
+
             //disable panel when not in display month
             if (date.getMonth() == month)
                 panel.classList.remove("calendar-disabled");
@@ -111,20 +146,8 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
             else
                 panel.classList.remove("calendar-now");
 
-            //grab section
-            var section = panel.firstElementChild;
-
-            //set date holder element
-            section.firstElementChild.innerText = date.getDate() + ".";
-
-            //get data for day, if any
-            var data = this.data.getUnixAll(date.toUnix()).value;
-
-            //set strips depending on items for date, returns count of items
-            var count = this.stripsForMonth(section.lastElementChild, data);
-
-            //set panel content, depending on count
-            this.contentForMonth(panel.lastElementChild, count);
+            //fill the panel
+            this.panelForMonth(date, panel);
 
             //increment date by one
             date.setDate(date.getDate() + 1);
@@ -172,7 +195,7 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
 
         //get new index -> distance from Date.NOW to clicked date in weeks / 3-days
         var newIndex = isMobile() ? this.indexForThreeDays(date) : this.indexForWeek(date);
-        
+
         //set new index, without rebinding pages
         this.setIndex(newIndex, true);
 
@@ -258,11 +281,11 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
 
             if (this.onAction(target))
                 return;
-            
+
             //handle header clicks here
             console.log("onClickWeek => " + target.headerId);
         } else if (!this.onAction(target)) {
-            
+
             //handle item clicks here
             console.log("onClickWeek => " + target.panelId);
         }
@@ -322,7 +345,35 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
         return this.pager.getTemplate();
     }
 
+    /* MODE DEPENDENT CALLBACKS */
+    this.addCall = noop;
+
+    this.updateCall = noop;
+
+    this.removeCall = noop;
+
     /* IMPLEMENTATION DETAIL */
+    this.aurMonth = function(date, unix, item) {
+        //get index for page new item would appear on
+        var index = this.indexForMonth(date);
+
+        //try to get the page
+        var page = this.getPageIfLoaded(index);
+
+        //if page is not loaded, nothing more to do, just return
+        if (!page)
+            return;
+
+        //find panelId to update
+        var panelId = this.monthForIndex(index).mondayBeforeMonth().daysTo(date);
+
+        //grab panel to update
+        var panel = page.lastElementChild.children[panelId];
+
+        //redraw the panel
+        this.panelForMonth(date, panel);
+    }
+
     this.setCallbacks = function(mode) {
         switch(mode) {
             case MODES.MONTH:
@@ -330,6 +381,12 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
                 this.pager.onChange = this.onChangeMonth.bind(this);
                 this.pager.onCreate = this.onCreateMonth.bind(this);
                 this.pager.onClick = this.onClickMonth.bind(this);
+
+                //MONTH mode => add, update and remove bind to the same function
+                //aur = ADD UPDATE REMOVE
+                this.addCall = this.aurMonth.bind(this);
+                this.updateCall = this.aurMonth.bind(this);
+                this.removeCall = this.aurMonth.bind(this);
                 return;
             case MODES.WEEK:
                 this.pager.onBind = this.onBindWeek.bind(this);
@@ -362,6 +419,24 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
         date.setMonth(date.getMonth() + index);
 
         return date;
+    }
+
+    //fill a panel for month
+    this.panelForMonth = function(date, panel) {
+        //grab section
+        var section = panel.firstElementChild;
+
+        //set date holder element
+        section.firstElementChild.innerText = date.getDate() + ".";
+
+        //get data for day, if any
+        var data = this.data.getUnixAll(date.toUnix()).value;
+
+        //set strips depending on items for date, returns count of items
+        var count = this.stripsForMonth(section.lastElementChild, data);
+
+        //set panel content, depending on count
+        this.contentForMonth(panel.lastElementChild, count);
     }
 
     //creates stripe points for data, returns item count
@@ -469,7 +544,7 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
             next = it.next();
         }
     }
-    
+
     //return index for date in month mode
     this.indexForMonth = function(date) {
         return this.now.monthsTo(date);
