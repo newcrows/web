@@ -7,7 +7,7 @@ let MODES = {
 let PX_PER_HOUR = 88;
 let FIRST_HOUR_OF_DAY = 8;
 
-function Calendar(container, strip) {
+function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onActionCallback) {
     //variables
     this.container = container; //the container used as calendar
     this.strip = strip;         //the strip displaying calendars currently shown date, if any
@@ -31,6 +31,9 @@ function Calendar(container, strip) {
         //update mode
         this.mode = mode;
 
+        //notify callback BEFORE actually performing mode-switch, to give callbacks time to update
+        this.onModeChange(mode);
+
         //set callbacks for mode
         this.setCallbacks(mode);
 
@@ -44,6 +47,14 @@ function Calendar(container, strip) {
     this.getMode = function() {
         return this.mode;
     }
+
+    /* CALLBACKS */
+
+    this.onModeChange = onModeChangeCallback ? onModeChangeCallback : noop;
+
+    this.onFilter = onFilterCallback ? onFilterCallback : noop;
+
+    this.onAction = onActionCallback ? onActionCallback : noop;
 
     /* LISTENERS */
 
@@ -147,7 +158,7 @@ function Calendar(container, strip) {
 
     this.onClickMonth = function(e) {
         var target = findTraverseUp(e.target, "calendar-panel-month");
-        if (!target)
+        if (!target || this.onAction(target))
             return;
 
         //get month for index as date
@@ -160,8 +171,8 @@ function Calendar(container, strip) {
         date.setDate(date.getDate() + target.panelId);
 
         //get new index -> distance from Date.NOW to clicked date in weeks / 3-days
-        var newIndex = isMobile ? this.indexForThreeDays(date) : this.indexForWeek(date);
-
+        var newIndex = isMobile() ? this.indexForThreeDays(date) : this.indexForWeek(date);
+        
         //set new index, without rebinding pages
         this.setIndex(newIndex, true);
 
@@ -245,10 +256,13 @@ function Calendar(container, strip) {
             if (!target)
                 return;
 
+            if (this.onAction(target))
+                return;
+            
             //handle header clicks here
             console.log("onClickWeek => " + target.headerId);
-        } else {
-
+        } else if (!this.onAction(target)) {
+            
             //handle item clicks here
             console.log("onClickWeek => " + target.panelId);
         }
@@ -365,16 +379,19 @@ function Calendar(container, strip) {
         var next = it.next();
         var count = 0;
         while (!next.done) {
-            var color = next.value[0];
+            //run item through filter, if it returns true don't use item
+            if (!this.onFilter(next.value)) {
+                var color = next.value[0];
 
-            //if no .point for color yet, create one and append to strips
-            if (!colors.includes(color)) {
-                colors.push(color)
-                strips.appendChild(calPoint(color));
+                //if no .point for color yet, create one and append to strips
+                if (!colors.includes(color)) {
+                    colors.push(color)
+                    strips.appendChild(calPoint(color));
+                }
+
+                //increment count
+                count++;
             }
-
-            //increment count
-            count++;
 
             //grab next data item
             next = it.next();
@@ -437,16 +454,25 @@ function Calendar(container, strip) {
             //grab next item data
             var value = next.value;
 
-            //get some required values
-            var unix = unixBase + value[0];
-            var meta = value[1];
+            //run through filter callback, if it returns true don't create item
+            if (!this.onFilter(value[1])) {
 
-            //append new panel for item data to content
-            content.appendChild(calWeekPanel(unix, value[0], meta, column));
+                //get some required values
+                var unix = unixBase + value[0];
+                var meta = value[1];
+
+                //append new panel for item data to content
+                content.appendChild(calWeekPanel(unix, value[0], meta, column));
+            }
 
             //grab next data item
             next = it.next();
         }
+    }
+    
+    //return index for date in month mode
+    this.indexForMonth = function(date) {
+        return this.now.monthsTo(date);
     }
 
     //return index for date in week mode

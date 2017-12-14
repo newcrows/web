@@ -120,13 +120,13 @@ function ViewPager(container, bounds, onBindCallback, onChangeCallback, onCreate
     }.bind(this));
 
     /* CALLBACKS */
-    this.onBind = onBindCallback ? onBindCallback : noop();
+    this.onBind = onBindCallback ? onBindCallback : noop;
     
-    this.onChange = onChangeCallback ? onChangeCallback : noop();
+    this.onChange = onChangeCallback ? onChangeCallback : noop;
     
-    this.onCreate = onCreateCallback ? onCreateCallback : noop();
+    this.onCreate = onCreateCallback ? onCreateCallback : noop;
     
-    this.onClick = onClickCallback ? onClickCallback : noop();
+    this.onClick = onClickCallback ? onClickCallback : noop;
     
     //DISABLED
     //this.onBeforeChange = onBeforeChangeCallback ? onBeforeChangeCallback : this.noop();

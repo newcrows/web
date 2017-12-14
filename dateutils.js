@@ -70,6 +70,14 @@ Date.prototype.weeksTo = function(otherDate) {
     return days / 7;
 }
 
+//returns difference in months between this date and another date
+Date.prototype.monthsTo = function(otherDate) {
+    var years = otherDate.getFullYear() - this.getFullYear();
+    var months = otherDate.getMonth() - this.getMonth();
+    
+    return (years * 12) + months;
+}
+
 //returns the monday of this date's current week, as new date
 Date.prototype.mondayOfWeek = function() {
     //the date that will hold monday of this date's current week
