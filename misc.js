@@ -7,6 +7,16 @@ addEventListener("resize", onResizeCheck);
 
 /* GENERIC CALLS */
 
+//return wether classlist contains class or not
+function containsClass(element, classes) {
+    var classList = element.classList;
+    for (var c = 0; c < classes.length; c++)
+        if (classList.contains(classes[c]))
+            return true;
+    
+    return false;
+}
+
 //use to decide layout
 function isMobile() {
     return _isMobile;

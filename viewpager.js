@@ -94,6 +94,9 @@ function ViewPager(container, bounds, onBindCallback, onChangeCallback, onCreate
     //pagination state
     this.bounds = bounds;   //get / set
     this.index = 0;         //get / set
+    
+    //can snap flag, true by default
+    this.canSnap = true;
 
     //backing elements
     this.pages = null;      //get only
@@ -113,7 +116,6 @@ function ViewPager(container, bounds, onBindCallback, onChangeCallback, onCreate
     container.addEventListener("touchstart", vpTouchStart.bind(this));
     container.addEventListener("touchmove", vpTouchMove.bind(this));
     container.addEventListener("touchend", vpTouchEnd.bind(this));
-    //TESTING
     window.addEventListener("resize", function(e) {
         this.pageWidth = container.offsetWidth;
         this.resetTranslate();
@@ -192,6 +194,14 @@ function ViewPager(container, bounds, onBindCallback, onChangeCallback, onCreate
 
         return this.pages[which];
     }
+    
+    this.setCanSnap = function(canSnap) {        
+        this.canSnap = canSnap;
+    }
+    
+    this.getCanSnap = function() {
+        return this.canSnap;
+    }
 
     this.setTemplate = function(template) {
         this.template = template;   //store template
@@ -259,9 +269,9 @@ function ViewPager(container, bounds, onBindCallback, onChangeCallback, onCreate
         if (!this.isInBounds(this.index + dir))
             return;
         
-        //DISABLED
-        //notify callback with old index and old page order
-        //this.onBeforeChange(this.index);
+        //check canSnap flag and redirect to dir=0 if needed
+        if (!this.canSnap)
+            dir = 0;
 
         //grab pages array
         var pages = this.pages;
@@ -327,8 +337,8 @@ function vpOnClickDelegate(e) {
 
 //swipe start
 function vpOnSwipeStart(e) {
-    //check is already swiping
-    if (this.isSwiping)
+    //check is already swiping or snapping disabled
+    if (this.isSwiping || !this.canSnap)
         return;
 
     //init swipe variables
@@ -358,16 +368,18 @@ function vpOnSwipeMove(e) {
 
     //how much was swiped
     var dx = e.clientX - this.swipeX;
+    
+    //check canSnap flag and redirect dx, but continue to process swipe event, to manage internal state correctly
+    if (!this.canSnap)
+        dx = 0;
+    
+    //update internal state
     this.swipeDX = dx;
 
     //check is over TOUCH_SLOP
     if (!this.isOverSlop && Math.abs(dx) > TOUCH_SLOP) {
         //set flag
         this.isOverSlop = true;
-
-        //DISABLED
-        //notify callback that index might change [pass old index]
-        //this.onBeforeChange(this.index);
     }
 
     //decide wether page can swipe or would swipe out of bounds

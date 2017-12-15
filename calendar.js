@@ -1,3 +1,5 @@
+//TODO: fix adding data via addPanel does not update header indicators -> [...]
+//TODO: fix/implement MODES.DAY
 let MODES = {
     MONTH: 0,
     WEEK: 1,    //will auto-adapt to three days when on mobile
@@ -7,20 +9,14 @@ let MODES = {
 let PX_PER_HOUR = 88;
 let FIRST_HOUR_OF_DAY = 8;
 
-function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onActionCallback) {
+function Calendar(container, strip, data, onModeChangeCallback, onFilterCallback, onActionCallback, onContentCallback) {
     //variables
     this.container = container; //the container used as calendar
     this.strip = strip;         //the strip displaying calendars currently shown date, if any
-    this.data = new DateMap();  //the data that populates this calendar
+    this.data = data ? data : new DateMap();  //the data that populates this calendar
     this.now = new Date(2017,11,14,10);      //the date calendar recognizes as "now" (date when index = 0)
     this.mode = -1;
     this.pager = new ViewPager(container);  //bounds null, callbacks null
-
-    /* MOCK DATA FOR TESTING */
-    this.data.setUnix(this.now.toUnix(), ["coral","(90 Min) Theorie Thema 5",5400]);
-    this.data.setUnix(this.now.toUnix() + 3600 * 2, ["cornflowerblue","(45 Min) Fahren",2700]);
-    this.data.setUnix(this.now.toUnix() + 3600 * 3, ["#4CAF50","(90 Min) Fahren Autobahn",5400]);
-    this.data.setUnix(this.now.toUnix() + 3600 * 24, ["gray","Buchbar",2700]);
 
     /* GETTERS / SETTERS */
     this.setMode = function(mode) {
@@ -47,39 +43,90 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
     this.getMode = function() {
         return this.mode;
     }
+    
+    //get data for unix, runs through this.onContent()
+    this.getUnix = function(unix) {
+        var item = this.data.getUnix(unix);
+        if (item != null) {
+            //always run through callback so it can work on item
+            var oc = this.onContent(item);
+            if (oc)
+                item = oc;
+        }
+        
+        return item;
+    }
 
     /* TRIGGERS */
     this.addPanel = function(unix, item) {
         //grab unixtime as date object
         var date = fromUnix(unix);
 
+        //if item exists, return false
+        if (this.data.getUnix(unix))
+            return false;
+
         //add item to backing data
         this.data.setUnix(unix, item);
 
+        //run through filter, if filter returns true, nothing more to do
+        if (this.onFilter(item))
+            return true;
+
+        //give callback a chance to work on content
+        var oc = this.onContent(item);
+        if (oc)
+            item = oc;
+
         //call current mode's add callback
         this.addCall(date, unix, item);
+
+        return true;
     }
 
     this.updatePanel = function(unix, item) {
         //grab unixtime as date object
         var date = fromUnix(unix);
 
+        //if item doesn't exist, return false
+        if (this.data.getUnix(unix) == null)
+            return false;
+
         //update item in backing data
         this.data.setUnix(unix, item);
 
+        //run through filter, if filter returns true, remove item from page but not from data
+        if (this.onFilter(item)) {
+            this.removeCall(date, unix);
+            return true;
+        }
+
+        //give callback a chance to work on content
+        var oc = this.onContent(item);
+        if (oc)
+            item = oc;
+
         //call current mode's update callback
         this.updateCall(date, unix, item);
+
+        return true;
     }
 
     this.removePanel = function(unix) {
         //grab unixtime as date object
         var date = fromUnix(unix);
 
+        //if item doesn't exist, return false
+        if (!this.data.getUnix(unix))
+            return false;
+
         //remove item from backing data
         this.data.deleteUnix(unix);
 
         //call current mode's remove callback
         this.removeCall(date, unix);
+
+        return true;
     }
 
     /* CALLBACKS */
@@ -88,6 +135,8 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
     this.onFilter = onFilterCallback ? onFilterCallback : noop;
 
     this.onAction = onActionCallback ? onActionCallback : noop;
+
+    this.onContent = onContentCallback ? onContentCallback : noop;
 
     /* LISTENERS */
     //listen for dimension changes
@@ -227,10 +276,10 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
             var data = this.data.getUnixAll(date.toUnix());
 
             //append data to content at column
-            this.panelsForWeek(content, data, column);
+            var showsData = this.panelsForWeek(content, data, column);
 
             //set header for current column, show [...] if data exists for this column
-            this.headerForWeek(headers.children[column], date, data.value);
+            this.headerForWeek(headers.children[column], date, showsData);
 
             //increment date by one day
             date.setDate(date.getDate() + 1);
@@ -272,21 +321,15 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
 
     this.onClickWeek = function(e) {
         var target = findTraverseUp(e.target, "calendar-panel-week");
-        if (!target) {
+        if (!target)
+            target = findTraverseUp(e.target, "calendar-panel-3-days");
+        if (!target) 
             target = findTraverseUp(e.target, "calendar-header-week");
-            if (!target)
-                return;
+        if (!target)
+            return;
 
-            if (this.onAction(target))
-                return;
-
-            //handle header clicks here
-            console.log("onClickWeek => " + target.headerId);
-        } else if (!this.onAction(target)) {
-
-            //handle item clicks here
-            console.log("onClickWeek => " + target.panelId);
-        }
+        if (this.onAction(target))
+            return;
     }
 
     /* PAGER TRIGGER DELEGATES */
@@ -335,6 +378,14 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
         return this.pager.getPageIfLoaded(index);
     }
 
+    this.setCanSnap = function(canSnap) {
+        this.pager.setCanSnap(canSnap);
+    }
+
+    this.getCanSnap = function() {
+        return this.pager.getCanSnap();
+    }
+
     this.setTemplate = function(template) {
         this.pager.setTemplate(template);
     }
@@ -351,6 +402,65 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
     this.removeCall = noop;
 
     /* IMPLEMENTATION DETAIL */
+    this.addWeek = function (date, unix, item) {
+        //get index for page new item would appear on, depending on isMobile()
+        var index = isMobile() ? this.indexForThreeDays(date) : this.indexForWeek(date);
+
+        //try to get the page
+        var page = this.getPageIfLoaded(index);
+
+        //if page is not loaded, nothing more to do, just return
+        if (!page)
+            return;
+
+        //find correct column
+        var base = isMobile() ? this.threeDaysForIndex(index) : this.weekForIndex(index);
+        var column = base.daysTo(date);
+
+        //grab page content
+        var content = page.lastElementChild.lastElementChild;
+
+        //create the panel
+        this.panelForWeek(content, unix, date.toShortUnix(), item, column);
+    }
+
+    this.updateWeek = function (date, unix, item) {
+        //remove item
+        this.removeWeek(date, unix);
+
+        //add item
+        this.addWeek(date, unix, item);
+    }
+
+    this.removeWeek = function(date, unix) {
+        //get index for page new item would appear on, depending on isMobile()
+        var index = isMobile() ? this.indexForThreeDays(date) : this.indexForWeek(date);
+
+        //try to get the page
+        var page = this.getPageIfLoaded(index);
+
+        //if page is not loaded, nothing more to do, just return
+        if (!page)
+            return;
+
+        //for consistency -> unix is the panelId anyway
+        var panelId = unix;
+
+        //grab page content
+        var content = page.lastElementChild.lastElementChild;
+
+        //find panel and delete it
+        var panel = content.firstElementChild;
+        while(panel) {
+            if (panel.panelId == unix) {
+                content.removeChild(panel);
+                break;
+            }
+
+            panel = panel.nextElementSibling;
+        }
+    }
+
     this.aurMonth = function(date, unix, item) {
         //get index for page new item would appear on
         var index = this.indexForMonth(date);
@@ -391,12 +501,17 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
                 this.pager.onChange = this.onChangeWeek.bind(this);
                 this.pager.onCreate = this.onCreateWeek.bind(this);
                 this.pager.onClick = this.onClickWeek.bind(this);
+
+                this.addCall = this.addWeek.bind(this);
+                this.updateCall = this.updateWeek.bind(this);
+                this.removeCall = this.removeWeek.bind(this);
                 return;
             default:
                 throw "Invalid Mode => " + mode;
                    }
     }
 
+    //set templates for passed mode, reloads pager
     this.setTemplates = function(mode) {
         switch(mode) {
             case MODES.MONTH:
@@ -404,6 +519,9 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
                 break;
             case MODES.WEEK:
                 this.setTemplate(calWeekTemplate());
+                break;
+            case MODES.DAY:
+                this.setTemplate(calDayTemplate());
                 break;
             default:
                 throw "Invalid Mode => " + mode;
@@ -452,9 +570,17 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
         var next = it.next();
         var count = 0;
         while (!next.done) {
+            var meta = next.value;
+
             //run item through filter, if it returns true don't use item
-            if (!this.onFilter(next.value)) {
-                var color = next.value[0];
+            if (!this.onFilter(meta)) {
+
+                //give callback a chance to work on content ALWAYS AFTER FILTER CALLBACK
+                var oc = this.onContent(meta);
+                if (oc)
+                    meta = oc;
+
+                var color = meta[0];
 
                 //if no .point for color yet, create one and append to strips
                 if (!colors.includes(color)) {
@@ -511,7 +637,7 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
         var day = date.getDate();
 
         //fill current header
-        header.innerText = WEEKDAYS[dow] + ", " + day + "." + (hasData ? "[...]" : "");
+        header.innerText = WEEKDAYS[dow] + ", " + day + "." + (hasData ? "" : "");
     }
 
     //create panels for week, at column, based on data
@@ -523,6 +649,7 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
 
         var it = data.value.entries();
         var next = it.next();
+        var showsData = false;
         while(!next.done) {
             //grab next item data
             var value = next.value;
@@ -530,17 +657,32 @@ function Calendar(container, strip, onModeChangeCallback, onFilterCallback, onAc
             //run through filter callback, if it returns true don't create item
             if (!this.onFilter(value[1])) {
 
-                //get some required values
-                var unix = unixBase + value[0];
                 var meta = value[1];
 
-                //append new panel for item data to content
-                content.appendChild(calWeekPanel(unix, value[0], meta, column));
+                //give callback a chance to work on content ALWAYS AFTER FILTER CALLBACK
+                var oc = this.onContent(meta);
+                if (oc)
+                    meta = oc;
+
+                //get some required values
+                var unix = unixBase + value[0];
+
+                //create panel
+                this.panelForWeek(content, unix, value[0], meta, column);
+                showsData = true;
             }
 
             //grab next data item
             next = it.next();
         }
+
+        return showsData;
+    }
+
+    //create a panel for week
+    this.panelForWeek = function(content, unix, unixShort, meta, column) {        
+        //append new panel for item data to content
+        content.appendChild(calWeekPanel(unix, unixShort, meta, column));
     }
 
     //return index for date in month mode
@@ -640,7 +782,7 @@ function calWeekTemplate() {
     var content = newDiv("calendar-content-" + classPostfix);
 
     //the columns (only for borders)
-    for (var c = 0; c < 7; c++)
+    for (var c = 0; c < headerCount; c++)
         content.appendChild(newDiv("calendar-column-" + classPostfix));
 
     //append the ToD strips
@@ -712,8 +854,13 @@ function calWeekPanel(unix, shortUnix, meta, column) {
     //create and style time element and panel-border-top
     var timeEle = newDiv("calendar-panel-date");
     timeEle.innerText = time;
-    timeEle.style.color = color;
-    panel.style.borderTop = "2px solid " + color;
+    //timeEle.style.color = color;
+    panel.style.borderBottom = "1px solid white"; //+ color;
+
+    //TEST
+    timeEle.style.color = "white"; //color;
+    panel.style.color = "white";
+    panel.style.background = color;
 
     //create content element and set text
     var textEle = newDiv("calendar-panel-inner");
@@ -734,7 +881,7 @@ function calTimeFrom(unix, duration) {
     var start = calUnixTimeToStr(unix);
     var end = calUnixTimeToStr(unix + duration);
 
-    return start + " - " + end;
+    return start + "-" + end;
 }
 
 function calUnixTimeToStr(unix) {

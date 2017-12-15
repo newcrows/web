@@ -123,6 +123,23 @@ Date.prototype.toUnix = function() {
     return Math.floor(this.getTime() / 1000);
 }
 
+Date.prototype.toShortUnix = function() {
+    var hours = this.getHours();
+    var minutes = this.getMinutes();
+    
+    return hours * 3600 + minutes * 60;
+}
+
+//instantiate a date from unix timestamp
+function fromUnix(unix) {
+    return new Date(unix * 1000);
+}
+
+//convert unix to short unix
+function toShortUnix(unix) {
+    return fromUnix(unix).toShortUnix();
+}
+
 /* DATE SPECIFIC STORAGE */
 
 //object to store data identified by unixtime
@@ -182,8 +199,11 @@ function DateMap() {
         var keys = this.toKeyPair(unix);
 
         var subMap = this.map.get(keys.main);
-        if (subMap)
+        if (subMap) {
             subMap.delete(keys.sub);
+            if (subMap.size == 0)
+                this.map.delete(keys.main);
+        }
     }
 
     //delete a full day
