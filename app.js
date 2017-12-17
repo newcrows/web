@@ -4,23 +4,35 @@ function toggleSide() {
 }
 
 function noop() {
-    
+
 }
 
 function newDiv(className) {
     var div = document.createElement("div");
-    div.className = className;
-    
+    if (className)
+        div.className = className;
+
     return div;
 }
 
-function containsClass(element, classes) {
+function containsClass(element, classes) {        
     var classList = element.classList;
     for (var c = 0; c < classes.length; c++)
         if (classList.contains(classes[c]))
             return true;
 
     return false;
+}
+
+function findTraverseUp(element, classes) {
+    while (element) {
+        if (containsClass(element, classes))
+            return element;
+
+        element = element.parentElement;
+    }
+
+    return null;
 }
 
 var _isMobile;

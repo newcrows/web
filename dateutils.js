@@ -59,14 +59,14 @@ Date.prototype.daysTo = function(otherDate) {
     //use UTC time format to discard timezone data like day-savings
     var thisUTC = Date.UTC(this.getFullYear(), this.getMonth(), this.getDate());
     var otherUTC = Date.UTC(otherDate.getFullYear(), otherDate.getMonth(), otherDate.getDate());
-    
+
     return Math.floor((otherUTC - thisUTC) / MS_PER_DAY);
 }
 
 //returns difference in weeks between this date and another date
 Date.prototype.weeksTo = function(otherDate) {
     var days = this.mondayOfWeek().daysTo(otherDate.mondayOfWeek());
-    
+
     return days / 7;
 }
 
@@ -74,7 +74,7 @@ Date.prototype.weeksTo = function(otherDate) {
 Date.prototype.monthsTo = function(otherDate) {
     var years = otherDate.getFullYear() - this.getFullYear();
     var months = otherDate.getMonth() - this.getMonth();
-    
+
     return (years * 12) + months;
 }
 
@@ -82,12 +82,12 @@ Date.prototype.monthsTo = function(otherDate) {
 Date.prototype.mondayOfWeek = function() {
     //the date that will hold monday of this date's current week
     var date = new Date(this);
-    
+
     var day = date.getDay();
     if (day == SUNDAY)
         day = 7;
     date.setDate(date.getDate()-day+1);
-    
+
     return date;
 }
 
@@ -96,26 +96,25 @@ Date.prototype.mondayBeforeMonth = function() {
     //date that will hold first monday before this date
     var date = new Date(this);
     date.setDate(1);
-    
+
     var day = date.getDay();
     if (day == SUNDAY)
         day = 7;
     date.setDate(-day+2);   //+2 because: date=1, SUNDAY=0 -> MONDAY=1 meaning date+MONDAY = 1+1 = 2
-    
+
     return date;
 }
 
 //returns the month following monday before, as Number, [or month monday is in, when mondayBefore == firstDayOfMonth]
 Date.prototype.displayMonth = function() {
-    var before = this.mondayBeforeMonth();
-    var month = before.getMonth();
-    
-    if (before.getDate() > 7)
+    var month = this.getMonth();
+
+    if (this.getDate() > 7)
         month++;
-    
+
     if (month > 11)
         month -= 12;
-    
+
     return month;
 }
 
@@ -126,12 +125,16 @@ Date.prototype.toUnix = function() {
 Date.prototype.toShortUnix = function() {
     var hours = this.getHours();
     var minutes = this.getMinutes();
-    
+
     return hours * 3600 + minutes * 60;
 }
 
 Date.prototype.asString = function() {
     return this.getDate() + ". " + MONTHS[this.getMonth()] + " " + this.getFullYear();
+}
+
+Date.prototype.asHHMMString = function() {
+    return asHHMMString(this);
 }
 
 Date.prototype.increment = function() {
@@ -140,6 +143,17 @@ Date.prototype.increment = function() {
 
 Date.prototype.addDays = function(days) {
     this.setDate(this.getDate() + days);
+}
+
+Date.prototype.addMonths = function(months) {
+    this.setMonth(this.getMonth() + months);
+}
+
+function asHHMMString(date) {
+    var hours = date.getHours();
+    var minutes = date.getMinutes();
+
+    return (hours < 10 ? "0" : "") + hours + ":" + (minutes < 10 ? "0" : "") + minutes;
 }
 
 //instantiate a date from unix timestamp
@@ -224,7 +238,7 @@ function DateMap() {
 
         this.map.delete(keys.main);
     }
-    
+
     /* FUNCTIONS */
 
     //clear all

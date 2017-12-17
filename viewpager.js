@@ -5,7 +5,7 @@ let SNAP_TRESHOLD = 80;
 function ViewPager(container, bounds, canSwipe, onCreateCallback, onBindCallback, onChangeCallback, onClickCallback) {
     this.container = container;
     container.classList.add("vp-container");
-    
+
     //initial width
     this.pageWidth = container.offsetWidth;
 
@@ -39,18 +39,18 @@ function ViewPager(container, bounds, canSwipe, onCreateCallback, onBindCallback
 
     /* CALLBACKS */
     this.onCreate = onCreateCallback ? onCreateCallback : noop;
-    
+
     this.onBind = onBindCallback ? onBindCallback : noop;
-    
+
     this.onChange = onChangeCallback ? onChangeCallback : noop;
-    
+
     this.onClick = onClickCallback ? onClickCallback : noop;
-    
+
     /* TRIGGERS */
     //notify that page at index needs rebind (because backing data changed)
     this.notifyBind = function(index) {
         var page = this.getPageIfLoaded(index);
-        
+
         //if page not currently loaded, return
         if (!page)
             return;
@@ -68,7 +68,7 @@ function ViewPager(container, bounds, canSwipe, onCreateCallback, onBindCallback
     this.previous = function() {
         this.snap(-1);
     }
-    
+
     //request rebind for all pages
     this.rebindAll = function() {
         for (var c = -1; c < 2; c++)
@@ -86,8 +86,8 @@ function ViewPager(container, bounds, canSwipe, onCreateCallback, onBindCallback
         return this.bounds;
     }
 
-    this.setIndex = function(index) {
-        this.setIndexInternal(index);
+    this.setIndex = function(index, noReload) {
+        this.setIndexInternal(index, noReload);
     }
 
     this.getIndex = function() {
@@ -106,11 +106,11 @@ function ViewPager(container, bounds, canSwipe, onCreateCallback, onBindCallback
 
         return this.pages[which];
     }
-    
+
     this.setCanSwipe = function(canSwipe) {        
         this.canSwipe = canSwipe;
     }
-    
+
     this.getCanSwipe = function() {
         return this.canSwipe;
     }
@@ -129,17 +129,18 @@ function ViewPager(container, bounds, canSwipe, onCreateCallback, onBindCallback
     /* IMPLEMENTATION DETAIL */
 
     //bound-enforced setIndex(..)
-    this.setIndexInternal = function(index) {
+    this.setIndexInternal = function(index, noReload) {
         //if not in bounds, clip to bounds
         if (!this.isInBounds(index)) {
             index = index < bounds[0] ? bounds[0] : bounds[1];
         }
         this.index = index;
-        
-        this.onChange(this.index);  //notify index changed
 
         //reload pages
-        this.rebindAll();
+        if (!noReload) {
+            this.onChange(this.index);  //notify index changed
+            this.rebindAll();
+        }
     }
 
     //create pages from stored template (clone template three times)
@@ -150,7 +151,7 @@ function ViewPager(container, bounds, canSwipe, onCreateCallback, onBindCallback
             //clone template
             var page = this.template.cloneNode(true);
             page.classList.add("vp-page");
-            
+
             //notify callback a page was created
             this.onCreate(page);
 
@@ -163,9 +164,7 @@ function ViewPager(container, bounds, canSwipe, onCreateCallback, onBindCallback
     //reset translation of all pages to default (from -100% to 0% to +100%)
     this.resetTranslate = function() {
         for (var c = -1; c < 2; c++)
-            //TESTING
             this.translate(this.pages[c], 0, c * this.pageWidth);
-            //this.translate(this.pages[c], c*100, 0);
     }
 
     //translate the page passed as arg by percent and px-offset
@@ -178,7 +177,7 @@ function ViewPager(container, bounds, canSwipe, onCreateCallback, onBindCallback
         //enforce bounds
         if (!this.isInBounds(this.index + dir))
             return;
-        
+
         //check canSwipe flag and redirect to dir=0 if needed
         if (!this.canSwipe)
             dir = 0;
@@ -278,11 +277,11 @@ function vpOnSwipeMove(e) {
 
     //how much was swiped
     var dx = e.clientX - this.swipeX;
-    
+
     //check canSwipe flag and redirect dx, but continue to process swipe event, to manage internal state correctly
     if (!this.canSwipe)
         dx = 0;
-    
+
     //update internal state
     this.swipeDX = dx;
 
