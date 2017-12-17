@@ -1,108 +1,24 @@
-/* A ViewPager implementation in JS
-Works on touch-devices and desktop
-NOTE: If you get [Uncaught TypeError: Cannot read property '-1' of null..] errors, remember to call setTemplate(..)
-
-Copy this to your .css(
-    .vp-container {
-        position: relative;
-    }
-
-    .vp-page {
-        position: absolute;
-        top: 0;
-        left: 0;
-
-        width: 100%;
-        height: 100%;
-
-        box-sizing: border-box;
-
-        transition: transform 0.4s ease;
-        overflow: hidden;
-    
-        will-change: transform, opacity;
-    }
-
-    .no-transition {
-        transition: none;
-    }
-)
-
-Constructor(
-    container               : HTMLElement                       : Element that will act as ViewPager, needs height set
-    [bounds]                : Number[2]                         : The left and right index bounds, inclusive
-    [onBindCallback]        : Function(HTMLElement, Number)     : Called when {page} needs content for {index}
-    [onChangeCallback]      : Function(Number)                  : Called when {index} changed
-    [onCreateCallback]      : Function(HTMLElement)             : Called when a {page} is created from template
-    [onClickCallback]       : Function(Event)                   : {Click Event} adjusted to work with ViewPager
-    [onBeforeChangeCallback]: Function(Number)                  : Called before {index} changes
-)
-
-Functions(
-    notifyBind(Number)  : Call to trigger onBindCallback if page at {index} is loaded
-    next()              : Call to trigger snap to the next page, if not out of bounds
-    previous()          : Call to trigger snap to the previous page, if not out of bounds
-    rebindAll()         : Call to trigger reload for all pages
-
-    setBounds(Number[2]): Set the left and right bounds, inclusive. This rebinds all loaded pages
-    getBounds()         : Return this pager's current bounds
-
-    setIndex(Number)    : Set the current index. This rebinds all loaded pages at new index
-    getIndex()          : Get this pager's current index
-
-    getPages()          : Return this pager's underlying pages
-    getPage(Number)     : Returns page for {index} or, if not loaded, return null
-
-    setTemplate(Element): Set the {template} this pager uses to render pages. This rebinds all loaded pages
-    getTemplate()       : Return this pager's current template to render pages
-)
-
-SideEffects(
-    1) Declared {container} is cleared after first call to setTemplate(..)
-    2) This uses the external methods:
-            vpOnClickDelegate(e),
-            vpOnSwipeStart(e),
-            vpOnSwipeMove(e),
-            vpOnSwipeEnd(e),
-            vpTouchStart(e),
-            vpTouchMove(e),
-            vpTouchEnd(e)
-    3) Declares following constants:
-            TOUCH_SLOP,
-            SNAP_TRESHOLD
-    4) Uses CSS-classes:
-            .vp-container,
-            .vp-page,
-            .no-transition
-
-    No other side effects.
-)
-
-*/
-
 //values for swipe and click handling
 let TOUCH_SLOP = 30;
 let SNAP_TRESHOLD = 80;
 
-function ViewPager(container, bounds, onBindCallback, onChangeCallback, onCreateCallback, onClickCallback, onBeforeChangeCallback) {
+function ViewPager(container, bounds, canSwipe, onCreateCallback, onBindCallback, onChangeCallback, onClickCallback) {
     this.container = container;
     container.classList.add("vp-container");
     
-    //TESTING
+    //initial width
     this.pageWidth = container.offsetWidth;
 
     //pagination state
     this.bounds = bounds;   //get / set
     this.index = 0;         //get / set
-    
-    //can snap flag, true by default
-    this.canSnap = true;
 
     //backing elements
     this.pages = null;      //get only
     this.template = null;   //get / set  
 
     //swipe state
+    this.canSwipe = canSwipe == null ? true : canSwipe;
     this.isSwiping = false;
     this.isOverSlop = false;
     this.swipeX = 0;
@@ -122,29 +38,25 @@ function ViewPager(container, bounds, onBindCallback, onChangeCallback, onCreate
     }.bind(this));
 
     /* CALLBACKS */
+    this.onCreate = onCreateCallback ? onCreateCallback : noop;
+    
     this.onBind = onBindCallback ? onBindCallback : noop;
     
     this.onChange = onChangeCallback ? onChangeCallback : noop;
     
-    this.onCreate = onCreateCallback ? onCreateCallback : noop;
-    
     this.onClick = onClickCallback ? onClickCallback : noop;
     
-    //DISABLED
-    //this.onBeforeChange = onBeforeChangeCallback ? onBeforeChangeCallback : this.noop();
-
     /* TRIGGERS */
     //notify that page at index needs rebind (because backing data changed)
     this.notifyBind = function(index) {
-        //which page corresponds to passed index at the moment
-        var which = index - this.index;
-
-        //if page at index not loaded currently, skip binding
-        if (Math.abs(which) > 1)
+        var page = this.getPageIfLoaded(index);
+        
+        //if page not currently loaded, return
+        if (!page)
             return;
 
         //invoke callback delegate
-        this.onBindInternal(this.pages[which], index);
+        this.onBindInternal(page, index);
     }
 
     //attempt to go one page forward
@@ -195,12 +107,12 @@ function ViewPager(container, bounds, onBindCallback, onChangeCallback, onCreate
         return this.pages[which];
     }
     
-    this.setCanSnap = function(canSnap) {        
-        this.canSnap = canSnap;
+    this.setCanSwipe = function(canSwipe) {        
+        this.canSwipe = canSwipe;
     }
     
-    this.getCanSnap = function() {
-        return this.canSnap;
+    this.getCanSwipe = function() {
+        return this.canSwipe;
     }
 
     this.setTemplate = function(template) {
@@ -258,9 +170,7 @@ function ViewPager(container, bounds, onBindCallback, onChangeCallback, onCreate
 
     //translate the page passed as arg by percent and px-offset
     this.translate = function(page, percent, px) {
-        //TESTING
         page.style.transform = "translate(" + px + "px)";
-        //page.style.transform = "translate(calc(" + percent + "% + " + px + "px))";
     }
 
     //snap to a direction
@@ -269,8 +179,8 @@ function ViewPager(container, bounds, onBindCallback, onChangeCallback, onCreate
         if (!this.isInBounds(this.index + dir))
             return;
         
-        //check canSnap flag and redirect to dir=0 if needed
-        if (!this.canSnap)
+        //check canSwipe flag and redirect to dir=0 if needed
+        if (!this.canSwipe)
             dir = 0;
 
         //grab pages array
@@ -337,8 +247,8 @@ function vpOnClickDelegate(e) {
 
 //swipe start
 function vpOnSwipeStart(e) {
-    //check is already swiping or snapping disabled
-    if (this.isSwiping || !this.canSnap)
+    //check is already swiping or swiping disabled
+    if (this.isSwiping || !this.canSwipe)
         return;
 
     //init swipe variables
@@ -369,8 +279,8 @@ function vpOnSwipeMove(e) {
     //how much was swiped
     var dx = e.clientX - this.swipeX;
     
-    //check canSnap flag and redirect dx, but continue to process swipe event, to manage internal state correctly
-    if (!this.canSnap)
+    //check canSwipe flag and redirect dx, but continue to process swipe event, to manage internal state correctly
+    if (!this.canSwipe)
         dx = 0;
     
     //update internal state
@@ -388,9 +298,7 @@ function vpOnSwipeMove(e) {
 
     //set page translate values
     for (var c = -1; c < 2; c++)
-        //TESTING
         this.translate(this.pages[c], 0, c * this.pageWidth + this.swipeDX);
-        //this.translate(this.pages[c], c * 100, this.swipeDX);
 }
 
 //swipe end

@@ -1,910 +1,309 @@
-//TODO: fix adding data via addPanel does not update header indicators -> [...]
-//TODO: fix/implement MODES.DAY
+let PX_PER_HOUR = 88;
+let HOURS_PER_DAY = 24;
+let PX_PER_UNIX = 88 / 3600;
+
 let MODES = {
     MONTH: 0,
-    WEEK: 1,    //will auto-adapt to three days when on mobile
-    DAY: 2
+    WEEK: 1
 }
 
-let PX_PER_HOUR = 88;
-let FIRST_HOUR_OF_DAY = 8;
+let CALLBACKS = [
+    {TEMPLATE: templateMonth, CREATE: createMonth, BIND: bindMonth, CHANGE: changeMonth, CLICK: clickMonth, POSITION: noop},
+    {TEMPLATE: templateWeek, CREATE: createWeek, BIND: bindWeek, CHANGE: changeWeek, CLICK: clickWeek, POSITION: posWeek}
+]
 
-function Calendar(container, strip, data, onModeChangeCallback, onFilterCallback, onActionCallback, onContentCallback) {
-    //variables
-    this.container = container; //the container used as calendar
-    this.strip = strip;         //the strip displaying calendars currently shown date, if any
-    this.data = data ? data : new DateMap();  //the data that populates this calendar
-    this.now = new Date(2017,11,14,10);      //the date calendar recognizes as "now" (date when index = 0)
-    this.mode = -1;
-    this.pager = new ViewPager(container);  //bounds null, callbacks null
+function Calendar(container, mode, now, factory, binder, provider) {
 
-    /* GETTERS / SETTERS */
-    this.setMode = function(mode) {
-        //already in target mode, return
-        if (this.mode == mode)
-            return;
+    /* INTERFACE */
 
-        //update mode
-        this.mode = mode;
+    //start the calendar
+    this.start = function() {
+        //get mode
+        var mode = this.mode;
 
-        //notify callback BEFORE actually performing mode-switch, to give callbacks time to update
-        this.onModeChange(mode);
-
-        //set callbacks for mode
-        this.setCallbacks(mode);
-
-        //set template based on mode -> this rebinds all pages
-        this.setTemplates(mode);
-
-        //invoke pager.onChange to stay in sync [strip updates, etc]
-        this.pager.onChange(this.getIndex());
+        //set internal mode to -1 so setMode() rebinds all pages
+        this.mode = -1;
+        
+        //kick off the calendar
+        this.setMode(mode);
     }
 
+    //set the current mode
+    this.setMode = function(mode) {
+        if (this.mode == mode)
+            return;
+        this.mode = mode;
+
+        //grab callbacks
+        var callbacks = CALLBACKS[mode];
+
+        //set callbacks
+        this.pager.onCreate = callbacks.CREATE.bind(this);
+        this.pager.onBind = callbacks.BIND.bind(this);
+        this.pager.onChange = callbacks.CHANGE.bind(this);
+        this.pager.onClick = callbacks.CLICK.bind(this);
+        this.onPosition = callbacks.POSITION.bind(this);
+
+        //set template -> this rebinds pages
+        this.pager.setTemplate(callbacks.TEMPLATE.call(this));
+    }
+
+    //get the current mode
     this.getMode = function() {
         return this.mode;
     }
-    
-    //get data for unix, runs through this.onContent()
-    this.getUnix = function(unix) {
-        var item = this.data.getUnix(unix);
-        if (item != null) {
-            //always run through callback so it can work on item
-            var oc = this.onContent(item);
-            if (oc)
-                item = oc;
-        }
-        
-        return item;
+
+    //TODO: implement
+    //go to a [date] in mode, or keep current date while switching if no date specified
+    this.go = function(mode, date) {
+        //TODO: implement
     }
 
-    /* TRIGGERS */
-    this.addPanel = function(unix, item) {
-        //grab unixtime as date object
-        var date = fromUnix(unix);
+    /* IMPLEMENTATION */
 
-        //if item exists, return false
-        if (this.data.getUnix(unix))
-            return false;
+    //calendar state
+    this.now = now ? now : new Date();
+    this.mode = mode ? mode : MODES.MONTH;
 
-        //add item to backing data
-        this.data.setUnix(unix, item);
+    //underlying pager
+    this.pager = new ViewPager(container);
 
-        //run through filter, if filter returns true, nothing more to do
-        if (this.onFilter(item))
-            return true;
-
-        //give callback a chance to work on content
-        var oc = this.onContent(item);
-        if (oc)
-            item = oc;
-
-        //call current mode's add callback
-        this.addCall(date, unix, item);
-
-        return true;
-    }
-
-    this.updatePanel = function(unix, item) {
-        //grab unixtime as date object
-        var date = fromUnix(unix);
-
-        //if item doesn't exist, return false
-        if (this.data.getUnix(unix) == null)
-            return false;
-
-        //update item in backing data
-        this.data.setUnix(unix, item);
-
-        //run through filter, if filter returns true, remove item from page but not from data
-        if (this.onFilter(item)) {
-            this.removeCall(date, unix);
-            return true;
-        }
-
-        //give callback a chance to work on content
-        var oc = this.onContent(item);
-        if (oc)
-            item = oc;
-
-        //call current mode's update callback
-        this.updateCall(date, unix, item);
-
-        return true;
-    }
-
-    this.removePanel = function(unix) {
-        //grab unixtime as date object
-        var date = fromUnix(unix);
-
-        //if item doesn't exist, return false
-        if (!this.data.getUnix(unix))
-            return false;
-
-        //remove item from backing data
-        this.data.deleteUnix(unix);
-
-        //call current mode's remove callback
-        this.removeCall(date, unix);
-
-        return true;
-    }
-
-    /* CALLBACKS */
-    this.onModeChange = onModeChangeCallback ? onModeChangeCallback : noop;
-
-    this.onFilter = onFilterCallback ? onFilterCallback : noop;
-
-    this.onAction = onActionCallback ? onActionCallback : noop;
-
-    this.onContent = onContentCallback ? onContentCallback : noop;
-
-    /* LISTENERS */
-    //listen for dimension changes
-    addEventListener("dimension_changed", function() {
-        //just reload pager when dimensions change
-        var mode = this.getMode();
-
-        //if mode is MODE.WEEK, recalculate index between WEEK and 3-days
-        if (mode == MODES.WEEK) {
-            //get index
-            var index = this.getIndex();
-
-            //get date for index BEFORE dimensions changed
-            var date = isMobile() ? this.weekForIndex(index) : this.threeDaysForIndex(index);
-
-            //get index for date AFTER dimensions changed
-            index = isMobile() ? this.indexForThreeDays(date, true) : this.indexForWeek(date);
-
-            //apply new index without rebinding
-            this.setIndex(index, true);
-
-            //invoke pager.onChange to stay in sync [strip changes between week/3-days]
-            this.pager.onChange(this.getIndex());
-        }
-
-        this.setTemplates(mode); 
+    //handler for dim changes
+    addEventListener("dimension_changed", function(e) {
+        this.start();
     }.bind(this));
 
-    /* PAGER CALLBACKS FOR MODE = MONTH */
-    this.onBindMonth = function(page, index) {
-        //get date representing month to bind, depending on Calendar.now
-        //TODO: also make it depend on isMobile() -> 3-days when in mobile
-        var date = this.monthForIndex(index);
-
-        //grab display month, to gray out panels on bounding months
-        var month = date.displayMonth();
-
-        //normalize date to first monday before month
-        date = date.mondayBeforeMonth();
-
-        var content = page.lastElementChild;
-        var panel = content.firstElementChild;
-        while(panel) { 
-
-            //disable panel when not in display month
-            if (date.getMonth() == month)
-                panel.classList.remove("calendar-disabled");
-            else
-                panel.classList.add("calendar-disabled");
-
-            //mark panel with .calendar-now when date of panel == Date.NOW
-            if (this.now.isEqual(date))
-                panel.classList.add("calendar-now");
-            else
-                panel.classList.remove("calendar-now");
-
-            //fill the panel
-            this.panelForMonth(date, panel);
-
-            //increment date by one
-            date.setDate(date.getDate() + 1);
-
-            //grab next panel
-            panel = panel.nextElementSibling;
-        }
-    }
-
-    this.onChangeMonth = function(index) {
-        if (!strip)
-            return;
-
-        var date = this.monthForIndex(index);
-        var month = date.displayMonth();
-
-        strip.innerText = MONTHS[month] + " " + date.getFullYear();
-    }
-
-    this.onCreateMonth = function(page) {
-        var content = page.lastElementChild;
-
-        //give the panels a panelId to identify them by
-        var panel = content.firstElementChild;
-        var id = 0;
-        while(panel) {
-            panel.panelId = id++;
-            panel = panel.nextElementSibling;
-        }
-    }
-
-    this.onClickMonth = function(e) {
-        var target = findTraverseUp(e.target, "calendar-panel-month");
-        if (!target || this.onAction(target))
-            return;
-
-        //get month for index as date
-        var date = this.monthForIndex(this.getIndex());
-
-        //find first monday currently shown
-        date = date.mondayBeforeMonth();
-
-        //adjust date to match clicked panel
-        date.setDate(date.getDate() + target.panelId);
-
-        //get new index -> distance from Date.NOW to clicked date in weeks / 3-days
-        var newIndex = isMobile() ? this.indexForThreeDays(date) : this.indexForWeek(date);
-
-        //set new index, without rebinding pages
-        this.setIndex(newIndex, true);
-
-        //change mode to WEEK -> this rebindsAll pages at new mode:index
-        this.setMode(MODES.WEEK);
-    }
-
-    /* PAGER CALLBACKS FOR MODE = WEEK */
-    this.onBindWeek = function(page, index) {
-        //get date representing week
-        var date = isMobile() ? this.threeDaysForIndex(index) : this.weekForIndex(index);
-
-        //grab headers
-        var headers = page.firstElementChild;
-
-        //get wrapper containing content[time of day strips, column vertical lines], content
-        var wrapper = page.lastElementChild;
-
-        //grab content
-        var content = wrapper.lastElementChild;
-
-        //clear content
-        content.innerText = "";
-
-        //grab columnCount, depending on isMobile()
-        var columnCount = isMobile() ? 3 : 7
-
-        //loop through columns
-        for (var column = 0; column < columnCount; column++) {            
-            //get data for current day
-            var data = this.data.getUnixAll(date.toUnix());
-
-            //append data to content at column
-            var showsData = this.panelsForWeek(content, data, column);
-
-            //set header for current column, show [...] if data exists for this column
-            this.headerForWeek(headers.children[column], date, showsData);
-
-            //increment date by one day
-            date.setDate(date.getDate() + 1);
-        }
-    }
-
-    this.onChangeWeek = function(index) {
-        if (!this.strip)
-            return;
-
-        var date = isMobile() ? this.threeDaysForIndex(index) : this.weekForIndex(index);
-
-        var text;
-        if (isMobile()) {
-            var threeDayStart = date.getDate() + "." + (date.getMonth()+1) + ". - ";
-            var fullYear = date.getFullYear();
-            date.setDate(date.getDate() + 2);
-            var threeDayEnd = date.getDate() + "." + (date.getMonth()+1) + "." + fullYear; 
-
-            text = threeDayStart + threeDayEnd;
-        } else {
-            text = "KW" + date.getWeek() + " (" + MONTHS[date.getMonth()].substr(0,3) + ") " + date.getWeekYear();
-        }
-
-        this.strip.innerText = text;
-    }
-
-    this.onCreateWeek = function(page) {
-        var headers = page.firstElementChild;
-
-        //give the headers ids to identify them by
-        var header = headers.firstElementChild;
-        var id = 0;
-        while(header) {
-            header.headerId = id++;
-            header = header.nextElementSibling;
-        }
-    }
-
-    this.onClickWeek = function(e) {
-        var target = findTraverseUp(e.target, "calendar-panel-week");
-        if (!target)
-            target = findTraverseUp(e.target, "calendar-panel-3-days");
-        if (!target) 
-            target = findTraverseUp(e.target, "calendar-header-week");
-        if (!target)
-            return;
-
-        if (this.onAction(target))
-            return;
-    }
-
-    /* PAGER TRIGGER DELEGATES */
-    this.notifyBind = function(index) {
-        this.pager.notifyBind();
-    }
-
-    this.next = function() {
-        this.pager.next();
-    }
-
-    this.previous = function() {
-        this.pager.previous();
-    }
-
-    this.rebindAll = function() {
-        this.pager.rebindAll();
-    }
-
-    /* PAGER GETTER / SETTER DELEGATES */
-    this.setBounds = function(bounds) {
-        this.pager.setBounds(bounds);
-    }
-
-    this.getBounds = function() {
-        return this.pager.getBounds();
-    }
-
-    this.setIndex = function(index, direct) {
-        //if direct == true, circumvent page rebinding that would occur if pager.setIndex(..) was called
-        if (direct)
-            this.pager.index = index;
-        else
-            this.pager.setIndex(index);
-    }
-
-    this.getIndex = function() {
-        return this.pager.getIndex();
-    }
-
-    this.getPages = function() {
-        return this.pager.getPages();
-    }
-
-    this.getPageIfLoaded = function(index) {
-        return this.pager.getPageIfLoaded(index);
-    }
-
-    this.setCanSnap = function(canSnap) {
-        this.pager.setCanSnap(canSnap);
-    }
-
-    this.getCanSnap = function() {
-        return this.pager.getCanSnap();
-    }
-
-    this.setTemplate = function(template) {
-        this.pager.setTemplate(template);
-    }
-
-    this.getTemplate = function() {
-        return this.pager.getTemplate();
-    }
-
-    /* MODE DEPENDENT CALLBACKS */
-    this.addCall = noop;
-
-    this.updateCall = noop;
-
-    this.removeCall = noop;
-
-    /* IMPLEMENTATION DETAIL */
-    this.addWeek = function (date, unix, item) {
-        //get index for page new item would appear on, depending on isMobile()
-        var index = isMobile() ? this.indexForThreeDays(date) : this.indexForWeek(date);
-
-        //try to get the page
-        var page = this.getPageIfLoaded(index);
-
-        //if page is not loaded, nothing more to do, just return
-        if (!page)
-            return;
-
-        //find correct column
-        var base = isMobile() ? this.threeDaysForIndex(index) : this.weekForIndex(index);
-        var column = base.daysTo(date);
-
-        //grab page content
-        var content = page.lastElementChild.lastElementChild;
-
-        //create the panel
-        this.panelForWeek(content, unix, date.toShortUnix(), item, column);
-    }
-
-    this.updateWeek = function (date, unix, item) {
-        //remove item
-        this.removeWeek(date, unix);
-
-        //add item
-        this.addWeek(date, unix, item);
-    }
-
-    this.removeWeek = function(date, unix) {
-        //get index for page new item would appear on, depending on isMobile()
-        var index = isMobile() ? this.indexForThreeDays(date) : this.indexForWeek(date);
-
-        //try to get the page
-        var page = this.getPageIfLoaded(index);
-
-        //if page is not loaded, nothing more to do, just return
-        if (!page)
-            return;
-
-        //for consistency -> unix is the panelId anyway
-        var panelId = unix;
-
-        //grab page content
-        var content = page.lastElementChild.lastElementChild;
-
-        //find panel and delete it
-        var panel = content.firstElementChild;
-        while(panel) {
-            if (panel.panelId == unix) {
-                content.removeChild(panel);
-                break;
-            }
-
-            panel = panel.nextElementSibling;
-        }
-    }
-
-    this.aurMonth = function(date, unix, item) {
-        //get index for page new item would appear on
-        var index = this.indexForMonth(date);
-
-        //try to get the page
-        var page = this.getPageIfLoaded(index);
-
-        //if page is not loaded, nothing more to do, just return
-        if (!page)
-            return;
-
-        //find panelId to update
-        var panelId = this.monthForIndex(index).mondayBeforeMonth().daysTo(date);
-
-        //grab panel to update
-        var panel = page.lastElementChild.children[panelId];
-
-        //redraw the panel
-        this.panelForMonth(date, panel);
-    }
-
-    this.setCallbacks = function(mode) {
-        switch(mode) {
-            case MODES.MONTH:
-                this.pager.onBind = this.onBindMonth.bind(this);
-                this.pager.onChange = this.onChangeMonth.bind(this);
-                this.pager.onCreate = this.onCreateMonth.bind(this);
-                this.pager.onClick = this.onClickMonth.bind(this);
-
-                //MONTH mode => add, update and remove bind to the same function
-                //aur = ADD UPDATE REMOVE
-                this.addCall = this.aurMonth.bind(this);
-                this.updateCall = this.aurMonth.bind(this);
-                this.removeCall = this.aurMonth.bind(this);
-                return;
-            case MODES.WEEK:
-                this.pager.onBind = this.onBindWeek.bind(this);
-                this.pager.onChange = this.onChangeWeek.bind(this);
-                this.pager.onCreate = this.onCreateWeek.bind(this);
-                this.pager.onClick = this.onClickWeek.bind(this);
-
-                this.addCall = this.addWeek.bind(this);
-                this.updateCall = this.updateWeek.bind(this);
-                this.removeCall = this.removeWeek.bind(this);
-                return;
-            default:
-                throw "Invalid Mode => " + mode;
-                   }
-    }
-
-    //set templates for passed mode, reloads pager
-    this.setTemplates = function(mode) {
-        switch(mode) {
-            case MODES.MONTH:
-                this.setTemplate(calMonthTemplate());
-                break;
-            case MODES.WEEK:
-                this.setTemplate(calWeekTemplate());
-                break;
-            case MODES.DAY:
-                this.setTemplate(calDayTemplate());
-                break;
-            default:
-                throw "Invalid Mode => " + mode;
-                   }
-    }
-
-    //returns date holding month for passed index
-    this.monthForIndex = function(index) {        
-        //date that will hold month for index
-        var date = new Date(this.now);
-        date.setMonth(date.getMonth() + index);
-
-        return date;
-    }
-
-    //fill a panel for month
-    this.panelForMonth = function(date, panel) {
-        //grab section
-        var section = panel.firstElementChild;
-
-        //set date holder element
-        section.firstElementChild.innerText = date.getDate() + ".";
-
-        //get data for day, if any
-        var data = this.data.getUnixAll(date.toUnix()).value;
-
-        //set strips depending on items for date, returns count of items
-        var count = this.stripsForMonth(section.lastElementChild, data);
-
-        //set panel content, depending on count
-        this.contentForMonth(panel.lastElementChild, count);
-    }
-
-    //creates stripe points for data, returns item count
-    this.stripsForMonth = function(strips, data) {
-        //clear strips
-        strips.innerText = "";
-
-        //if no data, return
-        if (!data)
-            return;
-
-        //loop through data
-        var colors = [];
-        var it = data.values();
-        var next = it.next();
-        var count = 0;
-        while (!next.done) {
-            var meta = next.value;
-
-            //run item through filter, if it returns true don't use item
-            if (!this.onFilter(meta)) {
-
-                //give callback a chance to work on content ALWAYS AFTER FILTER CALLBACK
-                var oc = this.onContent(meta);
-                if (oc)
-                    meta = oc;
-
-                var color = meta[0];
-
-                //if no .point for color yet, create one and append to strips
-                if (!colors.includes(color)) {
-                    colors.push(color)
-                    strips.appendChild(calPoint(color));
-                }
-
-                //increment count
-                count++;
-            }
-
-            //grab next data item
-            next = it.next();
-        }
-
-        return count;
-    }    
-
-    //set month panel content
-    this.contentForMonth = function(content, count) {
-        if (count > 0)
-            content.innerText = count + " Termin" + (count > 1 ? "e" : "");
-        else
-            content.innerText = "";
-    }
-
-    //returns date holding week for passed index
-    this.weekForIndex = function(index) {
-        //date that will hold week for index
-        var date = this.now.mondayOfWeek();
-        date.setDate(date.getDate() + index * 7);
-
-        return date;
-    }
-
-    //MODE.WEEK when on mobile becomes internal 3-day mode
-    this.threeDaysForIndex = function(index) {
-        var date = new Date(this.now);
-        date.setDate(date.getDate() + index * 3);
-
-        return date;
-    }
-
-    //fills one header at date, in week mode
-    this.headerForWeek = function(header, date, hasData) {
-        //mark header if date for header == Date.NOW
-        if (this.now.isEqual(date))
-            header.classList.add("calendar-now");
-        else
-            header.classList.remove("calendar-now");
-
-        //get day of week and date as day
-        var dow = date.getDay();
-        var day = date.getDate();
-
-        //fill current header
-        header.innerText = WEEKDAYS[dow] + ", " + day + "." + (hasData ? "" : "");
-    }
-
-    //create panels for week, at column, based on data
-    this.panelsForWeek = function(content, data, column) {
-        if (!data.value)
-            return;
-
-        var unixBase = data.key;    //unix for day of week, at hh,mm,ss = 0
-
-        var it = data.value.entries();
-        var next = it.next();
-        var showsData = false;
-        while(!next.done) {
-            //grab next item data
-            var value = next.value;
-
-            //run through filter callback, if it returns true don't create item
-            if (!this.onFilter(value[1])) {
-
-                var meta = value[1];
-
-                //give callback a chance to work on content ALWAYS AFTER FILTER CALLBACK
-                var oc = this.onContent(meta);
-                if (oc)
-                    meta = oc;
-
-                //get some required values
-                var unix = unixBase + value[0];
-
-                //create panel
-                this.panelForWeek(content, unix, value[0], meta, column);
-                showsData = true;
-            }
-
-            //grab next data item
-            next = it.next();
-        }
-
-        return showsData;
-    }
-
-    //create a panel for week
-    this.panelForWeek = function(content, unix, unixShort, meta, column) {        
-        //append new panel for item data to content
-        content.appendChild(calWeekPanel(unix, unixShort, meta, column));
-    }
-
-    //return index for date in month mode
-    this.indexForMonth = function(date) {
-        return this.now.monthsTo(date);
-    }
-
-    //return index for date in week mode
-    this.indexForWeek = function(date) {
-        return this.now.weeksTo(date); 
-    }
-
-    //return index for date in 3-day [internal] mode -> this rolls around from [di..do] to [do..sa] because 7/3 has rest
-    this.indexForThreeDays = function(date, startMonday) {
-        var daysTo = startMonday ? this.now.mondayOfWeek().daysTo(date) : this.now.daysTo(date);
-
-        return Math.floor(daysTo / 3);
-    }
+    //callbacks
+    this.factory = factory ? factory : new NoopFactory();
+    this.binder = binder ? binder : new NoopBinder();
+    this.provider = provider ? provider : new NoopProvider();
 }
 
-function calMonthTemplate() {
-    //the container
-    var template = newDiv("");
+function templateMonth() {
+    //console.log("templateMonth()");
 
-    //the headers
-    var headers = newDiv("calendar-headers");
+    //create month element
+    var month = newDiv("");
+
+    //create headers and append
     for (var c = 0; c < 7; c++) {
-        var header = newDiv("calendar-header-month");
-        header.innerText = WEEKDAYS[c+1 > 6 ? 0 : c+1];
+        var header = newDiv("cal-header cal-7 cal-float");
+        header.innerText = WEEKDAYS[c<6 ? c+1:0];
 
-        headers.appendChild(header);
+        month.appendChild(header);
     }
 
-    //the content, fill with panels
-    var content = newDiv("calendar-content-month");
+    //create content
+    var content = newDiv("cal-content cal-float");
+
+    //fill content with panels
     for (var c = 0; c < 42; c++) {
-        content.appendChild(calMonthPanel());
+        //create new empty panel for month
+        var panel = newDiv("cal-panel cal-7 cal-h-6 cal-float cal-borders");
+
+        //give factory a chance to customize panel content structure
+        this.factory.monthPanel(panel);
+
+        //append to page
+        content.appendChild(panel);
     }
 
-    //append to container
-    template.appendChild(headers);
-    template.appendChild(content);
+    //append content to month element
+    month.appendChild(content);
 
-    //return container
-    return template;
+    //return month element
+    return month;
 }
 
-function calMonthPanel() {
-    //the panel
-    var panel = newDiv("calendar-panel-month");        
+function createMonth(page) {
+    //console.log("createMonth(" + page + ")");
 
-    //the section with date of panel | strips to hold .point items
-    var section = newDiv("fill");
-
-    //the inner elements
-    var date = newDiv("calendar-panel-date");
-    var text = newDiv("calendar-panel-inner");
-    var strips = newDiv("calendar-panel-strip");
-
-    //append to section
-    section.appendChild(date);
-    section.appendChild(strips);
-
-    //append to panel
-    panel.appendChild(section);
-    panel.appendChild(text);
-
-    //return panel
-    return panel;
-}
-
-function calPoint(color) {
-    var point = newDiv("calendar-point");
-    point.style.background = color;
-
-    return point;
-}
-
-function calWeekTemplate() {
-    var classPostfix = isMobile() ? "3-days" : "week";
-    var headerCount = isMobile() ? 3 : 7;
-
-    var template = newDiv("");
-
-    //the headers
-    var headers = newDiv("calendar-headers");
-    for (var c = 0; c < headerCount; c++) {
-        var header = newDiv("calendar-header-" + classPostfix);
-
-        headers.appendChild(header);
-    }
-
-    //the content wrapper
-    var wrapper = newDiv("calendar-content-week-or-days-wrapper");
-
-    //the content
-    var content = newDiv("calendar-content-" + classPostfix);
-
-    //the columns (only for borders)
-    for (var c = 0; c < headerCount; c++)
-        content.appendChild(newDiv("calendar-column-" + classPostfix));
-
-    //append the ToD strips
-    calWeekTimeOfDays(content);
-
-    //append to wrapper
-    wrapper.appendChild(content);
-
-    //inner content holds items, so that TimeOfDay strips don't get cleared
-    var contentInner = newDiv("calendar-content-" + classPostfix);
-    wrapper.appendChild(contentInner);
-
-    //append to container
-    template.appendChild(headers);
-    template.appendChild(wrapper);
-
-    //return container
-    return template;
-}
-
-function calWeekTimeOfDays(content) {
-    //time of day strips to the left of content
-    for (var c = 0; c < (24 - FIRST_HOUR_OF_DAY); c++) {
-        //create ToD element
-        var timeOfDay = newDiv("calendar-time-of-day");
-
-        //position element
-        timeOfDay.style.top = (c * PX_PER_HOUR) + "px";
-
-        //set its content
-        timeOfDay.innerText = calWeekRowAsTime(c);
-
-        content.appendChild(timeOfDay);
+    //apply panelId to every panel in month
+    var content = page.lastElementChild;
+    var panel = content.firstElementChild;
+    var id = 0;
+    while (panel) {
+        panel.panelId = id++;
+        panel = panel.nextElementSibling;
     }
 }
 
-function calWeekRowAsTime(row) {
-    row += FIRST_HOUR_OF_DAY;
-    row = row > 23 ? row - 24 : row;
+function bindMonth(page, index) {
+    //console.log("bindMonth(" + page + ", " + index + ")");
 
-    return (row < 10 ? "0" : "") + row + ":00";
+    //grab date for first monday that should be displayed
+    var date = new Date(this.now);
+    date.setMonth(date.getMonth() + index);
+
+    //grab display month
+    var display = date.displayMonth();
+
+    //get first shown date
+    date = date.mondayBeforeMonth(); 
+
+    //loop through panels, notifying calendar callbacks for panel-fill
+    var content = page.lastElementChild;
+    var panel = content.firstElementChild;
+    while (panel) {
+        panel.innerText = "";
+        var items = this.provider.get(date.toUnix(), 1);
+        this.binder.bindMonth(panel, date, items);
+
+        if (date.getMonth() != display)
+            panel.classList.add("cal-disabled");
+
+        panel = panel.nextElementSibling;
+        date.increment();
+    }
 }
 
-function calWeekPanel(unix, shortUnix, meta, column) {
-    //grab relevant variables
-    var color = meta[0];
-    var text = meta[1];
-    var duration = meta[2];
-    var time = calTimeFrom(shortUnix, duration);
-
-    //depending on isMobile
-    var classPostfix = isMobile() ? "3-days" : "week";
-
-    //create panel
-    var panel = newDiv("card calendar-panel-" + classPostfix);
-
-    //attach panelId -> unix to identify it by (this is the full unixtime, not only intra-day)
-    panel.panelId = unix;
-
-    //position and sizing
-    var widthMod = isMobile() ? 3 : 7;
-    panel.style.left = "calc(100% / " + widthMod + " * " + column + ")";
-    panel.style.top = calUnixToOffset(shortUnix) + "px";
-    panel.style.height = calUnixToPx(duration) + "px";
-
-    //create section
-    var section = newDiv("fill");
-
-    //create and style time element and panel-border-top
-    var timeEle = newDiv("calendar-panel-date");
-    timeEle.innerText = time;
-    //timeEle.style.color = color;
-    panel.style.borderBottom = "1px solid white"; //+ color;
-
-    //TEST
-    timeEle.style.color = "white"; //color;
-    panel.style.color = "white";
-    panel.style.background = color;
-
-    //create content element and set text
-    var textEle = newDiv("calendar-panel-inner");
-    textEle.innerText = text;
-
-    //append time element to section
-    section.appendChild(timeEle);
-
-    //append section and content to panel
-    panel.appendChild(section);
-    panel.appendChild(textEle);
-
-    //return panel
-    return panel;
+function changeMonth(index) {
+    //console.log("changeMonth(" + index + ")");
 }
 
-function calTimeFrom(unix, duration) {    
-    var start = calUnixTimeToStr(unix);
-    var end = calUnixTimeToStr(unix + duration);
-
-    return start + "-" + end;
+function clickMonth(event) {
+    //console.log("clickMonth(" + event.target + ")");
 }
 
-function calUnixTimeToStr(unix) {
-    var hhmm = calUnixToHHMM(unix);
-    return (hhmm.hours < 10 ? "0" : "") + hhmm.hours + (hhmm.minutes < 10 ? ":0" : ":") + hhmm.minutes;
+function templateWeek() {
+    //console.log("templateWeek()");
+
+    var range = isMobile() ? 3 : 7;
+
+    var week = newDiv("");
+    for (var c = 0; c < range; c++)
+        week.appendChild(newDiv("cal-header cal-" + range + " cal-float"))
+
+    var content = newDiv("cal-content cal-float");
+
+    for (var v = 0; v < HOURS_PER_DAY; v++) {
+        var lead = newDiv("cal-panel cal-" + range + " cal-h-88px cal-float cal-borders cal-lead");
+        lead.innerText = v;
+        content.appendChild(lead);
+
+        for (var c = 1; c < range; c++)
+            content.appendChild(newDiv("cal-panel cal-"+ range + " cal-h-88px cal-float cal-borders"));
+    }
+
+    week.appendChild(content);
+    return week;
 }
 
-function calUnixToHHMM(unix) {
-    var hours = Math.floor(unix / 3600);
-    var minutes = Math.floor((unix - (hours * 3600)) / 60);
-
-    return {hours: hours, minutes: minutes};
+function createWeek(page) {
+    //console.log("createWeek(" + page + ")");
 }
 
-function calUnixToOffset(unix) {
-    var px = calUnixToPx(unix);
+function bindWeek(page, index) {
+    //console.log("bindWeek(" + page + ", " + index + ")");
 
-    //apply first hour of day offset
-    px -= PX_PER_HOUR * FIRST_HOUR_OF_DAY;            
+    var range = isMobile() ? 3 : 7;
 
-    return px < 0 ? px + PX_PER_HOUR * 24 : px;
+    var date = new Date(this.now).mondayOfWeek();
+    date.addDays(index * range);
+
+    //fill headers
+    for(var c = 0; c < range; c++) {
+        page.children[c].innerText = WEEKDAYS[date.getDay()] + ", " + date.getDate();
+        date.increment();
+    }
+
+    //reset date back to normal
+    date.addDays(-range);
+
+    //grab content
+    var content = page.lastElementChild;
+    var panels = content.children;
+
+    //get information about panels attached to content at the moment
+    var panelsStartAt = HOURS_PER_DAY * range;
+    var panelCount = panels.length - panelsStartAt;
+
+    //notify callback -> returns items that binder will use for date-range
+    var items = this.provider.get(date.toUnix(), range);
+    var count = items.length;
+    var index = 0;
+
+    //reuse existing panels
+    while (panelCount > 0 && index < count) {
+        var panel = panels[panelsStartAt];
+        var item = items[index++];
+
+        var show = this.binder.bindWeek(panel, item); 
+
+        if (show) {
+            this.onPosition(date, panel, item);
+
+            panelsStartAt++;
+            panelCount--;
+        }
+    }
+
+    //create new panel
+    var panel = newDiv("cal-panel cal-" + range + " cal-absolute card");
+
+    //pass to factory for customized content structure
+    this.factory.weekPanel(panel);
+
+    while (index < count) {
+        var item = items[index++];
+
+        var show = this.binder.bindWeek(panel, item);
+
+        if (show) {
+            this.onPosition(date, panel, item);
+
+            content.appendChild(panel); 
+
+            //create new panel
+            panel = newDiv("cal-panel cal-" + range + " cal-absolute card");
+
+            //pass to factory for customized content structure
+            this.factory.weekPanel(panel);
+        }
+    }
+
+    //delete left-over panels, if any
+    while (panelCount > 0) {
+        content.removeChild(panels[panels.length-1]);
+        panelCount--;
+    }
 }
 
-function calUnixToPx(unix) {
-    return PX_PER_HOUR * unix / 3600 ;
+function changeWeek(index) {
+    //console.log("changeWeek(" + index + ")");
+}
+
+function clickWeek(event) {
+    //console.log("clickWeek(" + event.target + ")");
+}
+
+function posWeek(date, panel, item) {
+    var itemDate = fromUnix(item.unix);
+
+    var column = date.daysTo(itemDate);
+    var short = itemDate.toShortUnix();
+
+    panel.style.top = PX_PER_UNIX * short + "px";
+    panel.style.height = PX_PER_UNIX * item.duration + "px";
+    panel.style.left = "calc(100% / " + (isMobile() ? 3 : 7) + " * " + column + ")";
+}
+
+function NoopFactory() {
+    console.log("Warning: No factory set.");
+
+    this.monthPanel = noop;
+    this.weekPanel = noop;
+}
+
+function NoopBinder() {
+    console.log("Warning: No binder set.");
+
+    this.bindMonth = noop;
+    this.bindWeek = noop;
+}
+
+function NoopProvider() {
+    console.log("Warning: No provider set.")
+
+    this.get = noop;
 }

@@ -130,6 +130,18 @@ Date.prototype.toShortUnix = function() {
     return hours * 3600 + minutes * 60;
 }
 
+Date.prototype.asString = function() {
+    return this.getDate() + ". " + MONTHS[this.getMonth()] + " " + this.getFullYear();
+}
+
+Date.prototype.increment = function() {
+    this.setDate(this.getDate() + 1);
+}
+
+Date.prototype.addDays = function(days) {
+    this.setDate(this.getDate() + days);
+}
+
 //instantiate a date from unix timestamp
 function fromUnix(unix) {
     return new Date(unix * 1000);
