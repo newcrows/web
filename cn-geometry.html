@@ -1,0 +1,161 @@
+<script>
+    class CNGeometry {
+        static point(x, y) {
+            return {x: x, y: y};
+        }
+
+        static vector(pt0, pt1) {
+            return {x: pt0.x, y: pt0.y, dx: pt1.x - pt0.x, dy: pt1.y - pt0.y};
+        }
+
+        static reverse(vec) {
+            let pt0 = CNGeometry.point(vec.x, vec.y);
+            let pt1 = CNGeometry.point(vec.x + vec.dx, vec.y + vec.dy);
+
+            return CNGeometry.vector(pt1, pt0);
+        }
+
+        static startPoint(vec) {
+            return CNGeometry.point(vec.x, vec.y);
+        }
+
+        static endPoint(vec) {
+            return CNGeometry.point(vec.x + vec.dx, vec.y + vec.dy);
+        }
+
+        static length(vec) {
+            let vPt = this.point(vec.x + vec.dx, vec.y + vec.dy);   //make a _point_ out of the vectors end point
+            return CNGeometry.distancePointPoint(vec, vPt);         //vec is treated as point because it has .x and .y members too
+        }
+
+        static distance(pt, ptOrVec) {
+            if (ptOrVec.dx)
+                return CNGeometry.distancePointVector(pt, ptOrVec);
+            else
+                return CNGeometry.distancePointPoint(pt, ptOrVec);
+        }
+
+        static distancePointVector(pt, vec) {
+            let vPt = CNGeometry.point(pt.x + vec.dy, pt.y - vec.dx);
+            let ptVec = CNGeometry.vector(pt, vPt);
+
+            let iPt = CNGeometry.intersect(vec, ptVec);
+
+            return CNGeometry.distancePointPoint(pt, iPt);
+        }
+
+        static distancePointPoint(pt0, pt1) {
+            let dx = pt1.x - pt0.x;
+            let dy = pt1.y - pt0.y;
+
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+        
+        static intersect(vec0, vec1) {
+            let x0 = vec0.x;
+            let y0 = vec0.y;
+            
+            let x1 = vec0.x + vec0.dx;
+            let y1 = vec0.x + vec0.dy;
+            
+            let x2 = vec1.x;
+            let y2 = vec1.y;
+            
+            let x3 = vec1.x + vec1.dx;
+            let y3 = vec1.y + vec1.dy;
+            
+            let iX = ((x3 - x2) * (x1 * y0 - x0 * y1) - (x1 - x0) * (x3 * y2 - x2 * y3)) / ((y3 - y2) * (x1 - x0) - (y1 - y0) * (x3 - x2));
+            let iY = ((y0 - y1) * (x3 * y2 - x2 * y3) - (y2 - y3) * (x1 * y0 - x0 * y1)) / ((y3 - y2) * (x1 - x0) - (y1 - y0) * (x3 - x2));
+            
+            return CNGeometry.point(iX, iY);
+        }
+
+        static intersectBounded(vec0, vec1) {
+            let iPt = CNGeometry.intersect(vec0, vec1);
+            let vPt = CNGeometry.point(vec0.x + vec0.dx, vec0.y + vec0.dy);
+
+            if (CNGeometry.distance(vec0, iPt) > CNGeometry.distance(vec0, vPt))
+                return null;
+
+            return iPt;
+        }
+
+        static rotate(vec, phi) {
+            if (CNGeometry.USE_DEGREE)
+                phi = phi * Math.PI / 180;
+
+            let nVec = this.ORIGIN_VECTOR;
+
+            let nPhi = CNGeometry.phi(vec, nVec);
+            if (CNGeometry.USE_DEGREE)
+                nPhi = nPhi * Math.PI / 180;
+
+            let rPhi = phi + nPhi;  //the new angle
+            let rLen = CNGeometry.length(vec);
+
+            let rVec = CNGeometry.copy(vec);
+            rVec.dx = Math.cos(rPhi) * rLen;
+            rVec.dy = Math.sin(rPhi) * rLen;
+
+            return rVec;
+        }
+
+        static translate(vec, dx, dy) {
+            let tVec = CNGeometry.copy(vec);
+            tVec.x += dx;
+            tVec.y += dy;
+
+            return tVec;
+        }
+
+        static scale(vec, scale) {
+            let sVec = CNGeometry.copy(vec);
+            sVec.dx *= scale;
+            sVec.dy *= scale;
+
+            return sVec;
+        }
+
+        static phi(vec0, vec1) {
+            if (CNGeometry.USE_DEGREE)
+                return this.phiDeg(vec0, vec1);
+            else
+                return this.phiRad(vec0, vec1);
+        }
+
+        static phiRad(vec0, vec1) {
+            let cos = Math.abs(vec0.dx * vec1.dx + vec0.dy * vec1.dy) /
+                (Math.sqrt(vec0.dx * vec0.dx + vec0.dy * vec0.dy) * Math.sqrt(vec1.dx * vec1.dx + vec1.dy * vec1.dy));
+
+            return Math.acos(cos);
+        }
+
+        static phiDeg(vec0, vec1) {
+            let phiRad = this.phiRad(vec0, vec1);
+
+            return phiRad * 180 / Math.PI;
+        }
+
+        static useDegree() {
+            CNGeometry.USE_DEGREE = true;
+        }
+
+        static useRad() {
+            CNGeometry.USE_DEGREE = false;
+        }
+
+        static copy(ptOrVec) {
+            let copy = {x: ptOrVec.x, y: ptOrVec.y};
+
+            if (ptOrVec.dx) {
+                copy.dx = ptOrVec.dx;
+                copy.dy = ptOrVec.dy;
+            }
+
+            return copy;
+        }
+    }
+
+    CNGeometry.ORIGIN_VECTOR = CNGeometry.vector(CNGeometry.point(0,0), CNGeometry.point(1,0));
+    CNGeometry.USE_DEGREE = false;
+</script>
