@@ -1,0 +1,371 @@
+<template id="cn-viewpager">
+    <style>
+        .pager {
+            position: relative;
+
+            width: inherit;
+            height: inherit;
+
+            overflow: hidden;
+        }
+
+        .page {
+            position: absolute;
+            top: 0;
+            left: 0;
+
+            width: 100%;
+            height: 100%;
+
+            box-sizing: border-box;
+            overflow: hidden;
+
+            transition: transform 0.4s ease;
+            will-change: transform, opacity;
+        }
+
+        .no-transition {
+            transition: none;
+        }
+
+    </style>
+    <div class="pager">
+        <slot></slot>
+    </div>
+</template>
+
+<script>
+    injectDocRef();
+
+    class CNViewPager extends CNElement {
+        //@Override CNElement
+        constructor() {
+            super();
+            this.injectTemplate("#cn-viewpager");
+
+            this.constructValues();
+            this.constructSwipeState();
+            this.constructGestureHandlers();
+            this.constructResizeHandlers();
+        }
+
+        connectedCallback() {
+            this.parseBoundsAttr();
+            this.parseCanSwipeAttr();
+            this.measureWidth();
+            this.measureHeight();
+        }
+
+        onCreate(page) {
+            //stub
+        }
+
+        onChange(newIndex, oldIndex) {
+            //stub
+        }
+
+        onBind(page, index) {
+            //stub
+        }
+
+        onClick(e) {
+            //stub
+        }
+
+        constructValues() {
+            this.TOUCH_SLOP = 30;
+            this.SNAP_TRESHOLD = 80;
+
+            this.index = 0;
+        }
+
+        constructSwipeState() {
+            this.canSwipe = true;
+            this.isSwiping = false;
+            this.isOverSlop = false;
+            this.swipeX = 0;
+            this.swipeDX = 0;
+        }
+
+        constructGestureHandlers() {
+            let pager = this.shadowQuery(".pager");
+
+            pager.addEventListener("click", this.onClickDelegate.bind(this));
+            pager.addEventListener("mousedown", this.onSwipeStart.bind(this));
+            pager.addEventListener("mousemove", this.onSwipeMove.bind(this));
+            pager.addEventListener("mouseup", this.onSwipeEnd.bind(this));
+            pager.addEventListener("touchstart", this.touchStart.bind(this));
+            pager.addEventListener("touchmove", this.touchMove.bind(this));
+            pager.addEventListener("touchend", this.touchEnd.bind(this));
+        }
+
+        constructResizeHandlers() {
+            window.addEventListener("resize", function(e) {
+                this.measureWidth();
+                this.measureHeight();
+                this.resetTranslate();
+            }.bind(this));
+        }
+
+        parseBoundsAttr() {
+            if (this.hasAttribute("bounds")) {
+                let bounds = this.getAttribute("bounds").split(",");
+                this.bounds = [Number.parseInt(bounds[0]), Number.parseInt(bounds[1])];
+            }
+        }
+
+        parseCanSwipeAttr() {
+            if (this.hasAttribute("can-swipe"))
+                this.canSwipe = this.getAttribute("can-swipe");
+        }
+
+        measureWidth() {
+            this.pageWidth = this.shadowQuery(".pager").offsetWidth;
+            return this.pageWidth;
+        }
+
+        measureHeight() {
+            this.pageHeight = this.shadowQuery(".pager").offsetHeight;
+            return this.pageHeight;
+        }
+
+        getWidth() {
+            return this.pageWidth;
+        }
+
+        requestBind(index) {
+            let page = this.getPageIfLoaded(index);
+            if (!page)
+                return;
+
+            this.onBindInternal(page, index);
+        }
+
+        next() {
+            this.snap(1);
+        }
+
+        previous() {
+            this.snap(-1);
+        }
+
+        rebindAll() {
+            this.onChange(this.index, this.index);
+            for (let c = -1; c < 2; c++)
+                this.onBindInternal(this.pages[c], this.index + c);
+        }
+
+        setBounds() {
+            this.bounds = bounds;
+            this.setIndexInternal(this.index);
+        }
+
+        getBounds() {
+            return this.bounds;
+        }
+
+        setIndex(index, noReload) {
+            this.setIndexInternal(index, noReload);
+        }
+
+        getIndex() {
+            return this.index;
+        }
+
+        getPages() {
+            return this.pages;
+        }
+
+        getPageIfLoaded(index) {
+            let which = index - this.index;
+            if (Math.abs(which) > 1)
+                return null;
+
+            return this.pages[which];
+        }
+
+        setCanSwipe(canSwipe) {
+            this.canSwipe = canSwipe;
+        }
+
+        getCanSwipe() {
+            return this.canSwipe;
+        }
+
+        setTemplate(template) {
+            this.template = template;
+            this.createFromTemplate();
+            this.rebindAll();
+            this.resetTranslate();
+        }
+
+        getTemplate() {
+            return this.template;
+        }
+
+        setIndexInternal(index, noReload) {
+            if (!this.isInBounds(index)) {
+                index = index < bounds[0] ? bounds[0] : bounds[1];
+            }
+            this.index = index;
+
+            if (!noReload) {
+                this.rebindAll();
+            }
+        }
+
+        createFromTemplate() {
+            let pager = this.shadowQuery(".pager");
+            this.pages = [];
+
+            pager.innerHTML = "";
+            for (let c = -1; c < 2; c++) {
+                let page = this.template.cloneNode(true);
+                page.classList.add("page");
+
+                this.onCreate(page);
+
+                this.pages[c] = page;
+                pager.appendChild(page);
+            }
+        }
+
+        resetTranslate() {
+            for (let c = -1; c < 2; c++)
+                CNViewPager.translatePage(this.pages[c], 0, c * this.pageWidth);
+        }
+
+        static translatePage(page, percent, px) {
+            page.style.transform = "translate(" + px + "px)";
+        }
+
+        snap(dir) {
+            if (!this.isInBounds(this.index + dir))
+                return;
+
+            /*if (!this.canSwipe)
+                dir = 0;*/
+
+            let pages = this.pages;
+
+            for (let c = -1; c < 2; c++)
+                CNViewPager.setPageVisibility(pages[c], c != -dir || c == 0);
+
+            let hold = pages[0];
+            pages[0] = pages[dir];
+            pages[dir] = pages[-dir];
+            pages[-dir] = hold;
+
+            this.index += dir;
+
+            if (dir != 0) {
+                this.onChange(this.index, this.index - dir);
+                this.onBindInternal(pages[dir], this.index + dir);
+            }
+
+            this.resetTranslate();
+        }
+
+        onBindInternal(page, index) {
+            if (!this.isInBounds(index))
+                return;
+
+            this.onBind(page, index);
+        }
+
+        isInBounds(index) {
+            if (!this.bounds)
+                return true;
+
+            return index >= this.bounds[0] && index <= this.bounds[1];
+        }
+
+        static setPageVisibility(page, visible) {
+            page.style.opacity = visible ? "1" : "0";
+        }
+
+        onClickDelegate(e) {
+            if (!this.isOverSlop)
+                this.onClick(e);
+        }
+
+        onSwipeStart(e) {
+            if (this.isSwiping || !this.canSwipe)
+                return;
+
+            this.swipeX = e.clientX;
+            this.swipeDX = 0;
+
+            for (let c = -1; c < 2; c++) {
+                this.pages[c].classList.add("no-transition");
+                CNViewPager.setPageVisibility(this.pages[c], true);
+            }
+
+            this.isSwiping = true;
+            this.isOverSlop = false;
+        }
+
+        onSwipeMove(e) {
+            if (!this.isSwiping)
+                return;
+
+            let dx = e.clientX - this.swipeX;
+
+            if (!this.canSwipe)
+                dx = 0;
+
+            this.swipeDX = dx;
+
+            if (!this.isOverSlop && Math.abs(dx) > this.TOUCH_SLOP) {
+                this.isOverSlop = true;
+            }
+
+            if (!this.isOverSlop || this.bounds && (dx > 0 && this.index == this.bounds[0] || dx < 0 && this.index == this.bounds[1]))
+                return;
+
+            for (let c = -1; c < 2; c++)
+                CNViewPager.translatePage(this.pages[c], 0, c * this.pageWidth + this.swipeDX);
+        }
+
+        onSwipeEnd(e) {
+            let dx = this.swipeDX;
+
+            for (let c = -1; c < 2; c++)
+                this.pages[c].classList.remove("no-transition");
+
+            if (dx < -this.SNAP_TRESHOLD)
+                this.snap(1);
+            else if (dx > this.SNAP_TRESHOLD)
+                this.snap(-1);
+            else if (this.isOverSlop)
+                this.snap(0);
+
+            this.isSwiping = false;
+        }
+
+        touchStart(e) {
+            e.clientX = e.changedTouches[0].clientX;
+            this.onSwipeStart(e);
+        }
+
+        touchMove(e) {
+            e.clientX = e.changedTouches[0].clientX;
+            this.onSwipeMove(e);
+        }
+
+        touchEnd(e) {
+            e.clientX = e.changedTouches[0].clientX;
+            this.onSwipeEnd(e);
+        }
+
+        //@Override CNElement
+        show() {
+            super.show();
+            this.measureWidth();
+            this.measureHeight();
+            this.resetTranslate();
+        }
+    }
+
+    customElements.define("cn-viewpager", CNViewPager);
+</script>

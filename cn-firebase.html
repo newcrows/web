@@ -1,0 +1,33 @@
+<script src="https://www.gstatic.com/firebasejs/5.0.2/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/5.0.2/firebase-database.js"></script>
+<script>
+    class CNFirebase {
+
+        constructor() {
+            if (!CNFirebase.database) {
+                this.init();
+            }
+        }
+
+        init() {
+            let config = {
+                apiKey: "AIzaSyDVFagcXYloKOpWguGs-fNdMmjAAJZp4CI",
+                authDomain: "instadrive-2fc63.firebaseapp.com",
+                databaseURL: "https://instadrive-2fc63.firebaseio.com",
+                projectId: "instadrive-2fc63",
+                storageBucket: "instadrive-2fc63.appspot.com",
+                messagingSenderId: "595612962428"
+            };
+
+            firebase.initializeApp(config);
+            CNFirebase.database = firebase.database();
+        }
+
+        ref(uri) {
+            let db = CNFirebase.database;
+            return db.ref(uri);
+        }
+    }
+
+    window.CN_FIRE = new CNFirebase();
+</script>

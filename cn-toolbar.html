@@ -1,0 +1,117 @@
+<template id="cn-toolbar">
+    <style>
+        .bar {
+            position: relative;
+            z-index: 1;
+
+            height: 50px;
+            width: inherit;
+
+            color: var(--primary-text);
+            background: var(--primary);
+            box-shadow: 0 2px 2px 0 rgba(0,0,0,0.14), 0 1px 5px 0 rgba(0,0,0,0.12), 0 3px 1px -2px rgba(0,0,0,0.2);
+
+            transition: opacity 0.4s ease;
+            transform: inherit;
+        }
+
+        .item-wrapper {
+            position: absolute;
+            height: 50px;
+            width: 100%;
+        }
+
+        .text {
+            /*font-weight: 160;*/
+            margin: 0;
+            text-align: center;
+            padding-top: 6px;
+        }
+
+        .hidden {
+            opacity: 0;
+        }
+    </style>
+    <div class="bar">
+        <div class="item-wrapper">
+            <slot></slot>
+        </div>
+        <h2 class="text"></h2>
+    </div>
+</template>
+
+<script>
+    injectDocRef();
+
+    class CNToolbar extends CNElement {
+        constructor() {
+            super();
+            this.injectTemplate("#cn-toolbar");
+        }
+
+        connectedCallback() {
+            this.parseTextAttr();
+            this.parseItems();
+        }
+
+        parseTextAttr() {
+            let text = this.shadowQuery(".text");
+            text.innerText = this.getAttribute("text");
+        }
+
+        parseItems() {
+            let items = this.children;
+            for (let c = 0; c < items.length; c++) {
+                let item = items[c];
+                CNToolbar.parseItem(item);
+            }
+        }
+
+        static parseItem(item) {
+            if (!(item instanceof CNToolbarItem))
+                this.throw("CNToolbar.children must be instanceof CNToolbarItem");
+
+            if (item.hasAttribute("left"))
+                item.style.float = "left";
+            else
+                item.style.float = "right";
+        }
+
+        setText(text) {
+            this.setAttribute("text", text);
+            this.parseTextAttr();
+        }
+
+        addItem(icon, onclick, float, size, text) {
+            let item = new CNToolbarItem();
+            if (icon)
+                item.setAttribute("icon", icon);
+            if (onclick)
+                item.addEventListener("click", onclick);
+            if (float)
+                item.setAttribute(float, null);
+            if (size)
+                item.setAttribute(size, null);
+            if (text)
+                item.setAttribute("text", text);
+
+            CNToolbar.parseItem(item);
+            this.appendChild(item);
+
+            return item;
+        }
+
+        removeItem(remove) {
+            let items = this.children;
+            for (let c = 0; c < items.length; c++) {
+                let item = items[c];
+                if (item == remove) {
+                    this.removeChild(item);
+                    break;
+                }
+            }
+        }
+    }
+
+    customElements.define("cn-toolbar", CNToolbar);
+</script>

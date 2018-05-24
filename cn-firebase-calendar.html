@@ -1,0 +1,203 @@
+<template id="cn-firebase-calendar">
+    <style>
+        .item {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            box-shadow: 0 2px 2px 0 rgba(0,0,0,0.14), 0 1px 5px 0 rgba(0,0,0,0.12), 0 3px 1px -2px rgba(0,0,0,0.2);
+            padding: 4px;
+        }
+    </style>
+</template>
+
+<script>
+    injectDocRef();
+
+    class CNFirebaseCalendar extends CNCalendar {
+        constructor() {
+            super();
+            this.injectTemplate("#cn-firebase-calendar");
+            this.items = {};
+        }
+
+        //@Override CNViewPager
+        connectedCallback() {
+            this.parseSchemaAttr();
+            this.parseSrcAttr();
+            super.connectedCallback();
+        }
+
+        //@Override CNViewPager
+        constructResizeHandlers() {
+            super.constructResizeHandlers();
+            window.addEventListener("resize", function () {
+                let lastMeasured = this.lastMeasured;
+                let newMeasured = this.pageWidth < 700 || this.pageHeight < 600;
+                if (lastMeasured != newMeasured) {
+                    this.rebindAll();
+                    this.lastMeasured = newMeasured;
+                }
+            }.bind(this));
+        }
+
+        bindPanelMonth(panel, bindDate) {
+            super.bindPanelMonth(panel, bindDate);
+
+            let bindDateKey = CNFirebaseCalendar.dateKeyFromDate(bindDate);
+            let item = this.items[bindDateKey];
+
+            if (item) {
+                this.setMonthPanelText(panel, item.length);
+            } else {
+                this.setMonthPanelText(panel, null);
+            }
+            this.setMonthPanelBoxes(panel, item);
+        }
+
+        bindPanelFlex(panel, bindDate) {
+            super.bindPanelFlex(panel, bindDate);
+
+            let bindDateKey = CNFirebaseCalendar.dateKeyFromDate(bindDate);
+            let item = this.items[bindDateKey];
+
+            panel.innerText = "";
+            if (!this.schema || !item)
+                return;
+
+            let len = item.length;
+            for (let c = 0; c < len; c++) {
+                let itemEl = this.positionItem(item[c]);
+                panel.appendChild(itemEl);
+            }
+        }
+
+        bindPanelDay(panel, bindDate) {
+            let bindDateKey = CNFirebaseCalendar.dateKeyFromDate(bindDate);
+            let item = this.items[bindDateKey];
+
+            panel.innerText = "";
+            if (!this.schema || !item)
+                return;
+
+            let len = item.length;
+            for (let c = 0; c < len; c++) {
+                let itemEl = this.positionItem(item[c]);
+                panel.appendChild(itemEl);
+            }
+        }
+
+        positionItem(item) {
+            let itemEl = newDiv("item");
+            let schemaType = this.schema[item["type"]];
+
+            let begins = item["start"];
+            let ends = begins + schemaType["duration"];
+
+            itemEl.style.top = ((begins - this.START_TIME) * this.PX_PER_MINUTE + 33) + "px";
+            itemEl.style.height = (schemaType["duration"] * this.PX_PER_MINUTE) + "px";
+            itemEl.style.background = schemaType["bk"];
+            itemEl.style.color = schemaType["color"];
+            itemEl.style.zIndex = "1";
+            itemEl.innerText = this.formatTime(begins) + "-" + this.formatTime(ends);
+
+            return itemEl;
+        }
+
+        parseSchemaAttr() {
+            if (!this.hasAttribute("schema"))
+                this.throw("CNFirebaseCalendar needs a valid schema");
+
+            let schemaUri = this.getAttribute("schema");
+            let ref = window.CN_FIRE.ref(schemaUri);
+
+            ref.on("value", function (snap) {
+                this.schema = snap.val();
+                this.rebindAll();
+            }.bind(this));
+        }
+
+        parseSrcAttr() {
+            if (!this.hasAttribute("src"))
+                this.throw("CNFirebaseCalendar needs a valid source");
+
+            let srcUri = this.getAttribute("src");
+            let ref = window.CN_FIRE.ref(srcUri);
+
+            ref.on("child_added", this.onChildAddedOrChanged.bind(this));
+            ref.on("child_changed", this.onChildAddedOrChanged.bind(this));
+            ref.on("child_removed", this.onChildRemoved.bind(this));
+        }
+
+        onChildAddedOrChanged(data) {
+            this.childBinder(data.key, data.val());
+        }
+
+        onChildRemoved(data) {
+            this.childBinder(data.key, null);
+        }
+
+        childBinder(dateKey, value) {
+            let dateArray = dateKey.split("-");
+            let date = CNFirebaseCalendar.dateFromDateArray(dateArray);
+
+            this.items[dateKey] = value;
+            this.requestBindPanel(date);
+        }
+
+        static dateKeyFromDate(date) {
+            return date.getFullYear() + "-" + date.getMonth() + "-" + date.getDate();
+        }
+
+        static dateFromDateArray(array) {
+            let date = new Date();
+            date.setFullYear(array[0]);
+            date.setMonth(array[1]);
+            date.setDate(array[2]);
+
+            return date;
+        }
+
+        setMonthPanelText(panel, text) {
+            let panelText = panel.lastElementChild;
+            panelText.innerText = this.formatMonthPanelText(text);
+        }
+
+        formatMonthPanelText(text) {
+            if (text) {
+                if (this.pageWidth < 700 || this.pageHeight < 600) {
+                    return null;
+                } else {
+                    if (text > 1)
+                        return text + " Termine";
+                    else
+                        return text + " Termin";
+                }
+            }
+            return null;
+        }
+
+        setMonthPanelBoxes(panel, item) {
+            let panelBoxes = panel.children[1];
+            panelBoxes.innerText = null;
+
+            if (!this.schema || !item)
+                return;
+
+            let usedTypes = [];
+            for (let c = 0; c < item.length; c++) {
+                let boxItem = item[c];
+                let type = this.schema[boxItem["type"]];
+
+                if (type && !usedTypes.includes(type)) {
+                    let box = newDiv();
+                    box.style.background = type["bk"];
+
+                    panelBoxes.appendChild(box);
+                    usedTypes.push(type);
+                }
+            }
+        }
+    }
+
+    customElements.define("cn-firebase-calendar", CNFirebaseCalendar);
+</script>

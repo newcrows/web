@@ -1,0 +1,16 @@
+<template id="cn-copy-this">
+
+</template>
+
+<script>
+    injectDocRef();
+
+    class CNCopyThis extends CNElement {
+        constructor() {
+            super();
+            this.injectTemplate("#cn-copy-this");
+        }
+    }
+
+    customElements.define("cn-copy-this", CNCopyThis);
+</script>

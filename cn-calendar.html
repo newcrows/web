@@ -1,0 +1,703 @@
+<template id="cn-calendar">
+    <style>
+        .pager {
+            --disabled-text: #d3d3d3;
+            --disabled: #f7f7f7;
+            --lead-text: #808080;
+            --border: #eaeaea;
+            --now: cornflowerblue;
+        }
+
+        .headers {
+            position: absolute;
+            z-index: 2;
+            top: 0;
+            left: 0;
+            width: 100%;
+        }
+
+        .header {
+            float: left;
+            position: relative;
+            padding: 4px;
+            box-sizing: border-box;
+
+            box-shadow: 0 2px 2px 0 rgba(0,0,0,0.14), 0 1px 5px 0 rgba(0,0,0,0.12), 0 3px 1px -2px rgba(0,0,0,0.2);
+            border-radius: 0px;
+            height: 33px;
+            color: var(--primary-text);
+            background: var(--primary);
+            text-align: center;
+            z-index: 1;
+        }
+
+        .panels {
+            position: relative;
+            margin-top: 33px;
+            width: 100%;
+            height: calc(100% - 33px);
+        }
+
+        .panel {
+            position: relative;
+            float: left;
+            padding: 4px;
+            box-sizing: border-box;
+
+            border-right: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            overflow: hidden;
+            color: var(--lead-text);
+        }
+
+        .date {
+            float: left;
+        }
+
+        .boxes {
+            float: right;
+            margin-top: 4px;
+        }
+
+        .boxes > * {
+            float: right;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            margin-left: 2px;
+            margin-bottom: 2px;
+        }
+
+        .text {
+            float: right;
+            width: 100%;
+            text-align: center;
+        }
+
+        .now {
+            background: var(--now);
+            color: white;
+        }
+
+        .disabled {
+            color: var(--disabled-text);
+            background: var(--disabled);
+        }
+
+        .hover:hover {
+            background: lightgray;
+        }
+
+        .time-strip {
+            position: absolute;
+            left: 0;
+            z-index: -1;
+
+            width: 100%;
+
+            color: var(--lead-text);
+            border-top: 1px solid var(--border);
+        }
+    </style>
+</template>
+
+<script>
+    injectDocRef();
+
+    class CNCalendar extends CNViewPager {
+        constructor() {
+            super();
+            this.injectTemplate("#cn-calendar");
+        }
+
+        //override this for custom click handling
+        //@Override CNViewPager
+        onClick(e) {
+            if (this.mode == this.MODES.MONTH) {
+                var target = upwardTarget(e.target, "panel");
+                if (target) {
+                    this.setAnchor(target.bindDate, true); //suppress rebindAll() because setMode calls it anyway
+                    this.setMode(this.MODES.FLEX);
+                }
+            } else if (this.mode == this.MODES.FLEX) {
+                var target = upwardTarget(e.target, "panel");
+                if (target) {
+                    this.setAnchor(target.bindDate, true); //suppress rebindAll() because setMode calls it anyway
+                    this.setMode(this.MODES.DAY);
+                }
+            }
+        }
+
+        //override this and call super() if using default panel layout for month
+        bindPanelMonth(panel, bindDate) {
+            panel.firstElementChild.innerText = bindDate.getDate();
+
+            //TODO: check if this has performance penalty, if yes, maybe stick with panelIds in onCreate(..)
+            panel.bindDate = new Date(bindDate.getTime());
+        }
+
+        //override this and call super()
+        bindPanelFlex(panel, bindDate) {
+            //TODO: check if this has performance penalty, if yes, maybe stick with panelIds in onCreate(..)
+            panel.bindDate = new Date(bindDate.getTime());
+        }
+
+        //override this
+        bindPanelDay(panel, bindDate) {
+            //stub
+        }
+
+        //if custom panel layout, override this
+        initPanelMonth(panel) {
+            let date = newDiv("date");
+            panel.appendChild(date);
+
+            let boxes = newDiv("boxes");
+            panel.appendChild(boxes);
+
+            let text = newDiv("text");
+            panel.appendChild(text);
+        }
+
+        //if custom panel layout, override this
+        initPanelFlex(panel) {
+            //if any setup work to be done, do it here
+        }
+
+        //if custom panel layout, override this
+        initPanelDay(panel) {
+            //if any setup work to be done, do it here
+        }
+
+        //if customized date strip, override this
+        formatMonthMode(anchor) {
+            return this.MONTHS[anchor.getMonth()] +
+                " " + anchor.getFullYear();
+        }
+
+        //if customized date strip, override this
+        formatFlexMode(anchor) {
+            let end = new Date(anchor.getTime());
+            end.setDate(end.getDate() + this.flexRatio - 1);
+
+            let sMonth = anchor.getMonth();
+            let eMonth = end.getMonth();
+
+            let formatted;
+
+            if (this.flexKW) {
+                let sKW = anchor.getWeekOfYear();
+                let eKW = end.getWeekOfYear();
+
+                let emFormatted = this.MONTHS[eMonth].substr(0,3) + ") ";
+                if (sMonth == eMonth)
+                    emFormatted = " (" + emFormatted;
+                else
+                    emFormatted = " (" + this.MONTHS[sMonth].substr(0,3) + " - " + emFormatted;
+
+                let eFormatted = "KW " + eKW[1] + emFormatted + eKW[0];
+                if (sKW[1] == eKW[1] && sKW[0] == eKW[0]) {
+                    formatted = eFormatted;
+                } else if (sKW[1] != eKW[1] && sKW[0] == eKW[0]) {
+                    formatted = "KW " + sKW[1] + " - " + eFormatted;
+                } else {
+                    formatted = "KW " + sKW[1] + " " + sKW[0] + " - " + eFormatted;
+                }
+            } else {
+                let sDate = anchor.getDate();
+                let eDate = end.getDate();
+
+                let sYear = anchor.getFullYear();
+                let eYear = end.getFullYear();
+
+                let eFormatted = eDate + ". " + this.MONTHS[eMonth].substr(0,3) + " " + eYear;
+
+                if (sDate == eDate && sMonth == eMonth && sYear == eYear) {
+                    formatted = eFormatted;
+                } else if (sDate != eDate && sMonth == eMonth && sYear == eYear) {
+                    formatted = sDate + ". - " + eFormatted;
+                } else if (sDate != eDate && sMonth != eMonth && sYear == eYear) {
+                    formatted = sDate + ". " + this.MONTHS[sMonth].substr(0, 3) + " - " + eFormatted;
+                } else {
+                    formatted = sDate + ". " + this.MONTHS[sMonth].substr(0, 3) + " " + sYear + " - " + eFormatted;
+                }
+            }
+            return formatted;
+        }
+
+        //if customized date strip, override this
+        formatDayMode(anchor) {
+            return anchor.getDate() + ". " + this.MONTHS[anchor.getMonth()] + " " + anchor.getFullYear();
+        }
+
+        requestBindPanelMonth(date) {
+            for (let c = -1; c < 2; c++) {
+                let index = this.index + c;
+                let monthAnchor = this.anchorForMonth(index - this.index);
+                let bindAnchor = new Date(monthAnchor.getTime());
+
+                bindAnchor.setDate(1);
+                bindAnchor.addDays(-bindAnchor.getDay());
+
+                let daysTo = bindAnchor.daysTo(date);
+                if (daysTo < 42) {
+                    let page = this.getPageIfLoaded(index);
+                    let panels = CNCalendar.panelsForPage(page);
+
+                    this.bindPanelMonth(panels[daysTo], date);
+                    return;
+                }
+            }
+        }
+
+        requestBindPanelFlex(date) {
+            for (let c = -1; c < 2; c++) {
+                let index = this.index + c;
+                let bindAnchor = this.anchorForFlex(index - this.index);
+
+                let daysTo = bindAnchor.daysTo(date);
+                if (daysTo < this.flexRatio) {
+                    let page = this.getPageIfLoaded(index);
+                    let panels = CNCalendar.panelsForPage(page);
+
+                    this.bindPanelFlex(panels[daysTo], date);
+                    return;
+                }
+            }
+        }
+
+        requestBindPanelDay(date) {
+            for (let c = -1; c < 2; c++) {
+                let index = this.index + c;
+                let bindAnchor = this.anchorForDay(index - this.index);
+
+                let daysTo = bindAnchor.daysTo(date);
+                if (daysTo == 0) {
+                    let page = this.getPageIfLoaded(index);
+                    let panels = CNCalendar.panelsForPage(page);
+
+                    this.bindPanelDay(panels[0], date);
+                    return;
+                }
+            }
+        }
+
+        onBindMonth(page, index) {
+            let panels = CNCalendar.panelsForPage(page);
+            let monthAnchor = this.anchorForMonth(index - this.index);
+            let bindAnchor = new Date(monthAnchor.getTime());
+
+            bindAnchor.setDate(1);
+            bindAnchor.addDays(-bindAnchor.getDay());
+
+            for (let c = 0; c < panels.length; c++) {
+                let panel = panels[c];
+
+                this.applyNow(panel, bindAnchor);
+                CNCalendar.applyDisabledMonth(panel, monthAnchor, bindAnchor);
+
+                this.bindPanelMonth(panel, bindAnchor);
+                bindAnchor.increment();
+            }
+        }
+
+        onBindFlex(page, index) {
+            let headers = CNCalendar.headersForPage(page);
+            let panels = CNCalendar.panelsForPage(page);
+            let bindAnchor = this.anchorForFlex(index - this.index);
+
+            for (let c = 0; c < this.flexRatio; c++) {
+                let header = headers[c];
+                let panel = panels[c];
+
+                this.applyNow(header, bindAnchor);
+                this.applyWeekday(header, bindAnchor);
+
+                this.bindPanelFlex(panel, bindAnchor);
+                bindAnchor.increment();
+            }
+        }
+
+        onBindDay(page, index) {
+            let header = CNCalendar.headersForPage(page)[0];
+            let panel = CNCalendar.panelsForPage(page)[0];
+            let bindAnchor = this.anchorForDay(index - this.index);
+
+            this.applyNow(header, bindAnchor);
+            this.applyWeekday(header, bindAnchor);
+            this.applyRelativeDate(header, bindAnchor);
+
+            this.bindPanelDay(panel, bindAnchor);
+        }
+
+        requestBindPanel(date) {
+            //stub, assigned depending on mode
+        }
+
+        static applyDisabledMonth(panel, monthAnchor, bindAnchor) {
+            if (monthAnchor.getMonth() != bindAnchor.getMonth()) {
+                panel.classList.add("disabled");
+            } else {
+                panel.classList.remove("disabled");
+            }
+        }
+
+        static headersForPage(page) {
+            return page.querySelector(".headers").children;
+        }
+
+        static panelsForPage(page) {
+            return page.querySelector(".panels").children;
+        }
+
+        applyNow(panelOrHeader, bindAnchor) {
+            if (bindAnchor.equals(this.now)) {
+                panelOrHeader.classList.add("now");
+            } else {
+                panelOrHeader.classList.remove("now");
+            }
+        }
+
+        applyWeekday(header, bindAnchor) {
+            header.innerText = this.WEEKDAYS[bindAnchor.getDay()] + ", " + bindAnchor.getDate();
+        }
+
+        applyRelativeDate(header, bindAnchor) {
+            //TODO: implement
+        }
+
+        anchorForMonth(delta) {
+            let anchor = this.anchorCopy();
+            anchor.setMonth(anchor.getMonth() + delta);
+
+            return anchor;
+        }
+
+        anchorForFlex(delta) {
+            let anchor = this.anchorCopy();
+            anchor.setDate(anchor.getDate() + delta * this.flexRatio);
+
+            return anchor;
+        }
+
+        anchorForDay(delta) {
+            let anchor = this.anchorCopy();
+            anchor.setDate(anchor.getDate() + delta);
+
+            return anchor;
+        }
+
+        anchorCopy() {
+            return new Date(this.anchor.getTime());
+        }
+
+        formatAnchor(anchor) {
+            //stub
+        }
+
+        //@Override CNViewPager
+        onChange(newIndex, oldIndex) {
+            this.updateAnchor(newIndex - oldIndex);
+            this.updateToolbar();
+        }
+
+        //@Override CNViewPager
+        connectedCallback() {
+            this.parseFlexKWAttr();
+            this.parseToolbarAttr();
+            super.connectedCallback();
+            this.parseModeAttr();
+        }
+
+        //@Override CNViewPager
+        constructValues() {
+            super.constructValues();
+            this.now = new Date();
+            this.anchor = new Date(this.now.getTime());
+            this.MODES = {MONTH: "month", FLEX: "flex", DAY: "day"};
+            this.MODES.DEFAULT = this.MODES.MONTH;
+            this.WEEKDAYS = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+            this.MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni",
+                "Juli", "August", "September", "Oktober", "November", "Dezember"];
+            this.FLEX_MIN_WIDTH = 100;
+            this.START_TIME = 60*7;
+            this.END_TIME = 60 * 23;
+            this.PX_PER_MINUTE = 1;
+        }
+
+        //@Override CNViewPager
+        constructResizeHandlers() {
+            super.constructResizeHandlers();
+            window.addEventListener("resize", function () {
+                let oldFlexRatio = this.flexRatio;
+                let flexRatio = this.measureFlexRatio();
+
+                if (oldFlexRatio != flexRatio && this.mode == this.MODES.FLEX) {
+                    this.rebindTemplate();
+                }
+            }.bind(this));
+        }
+
+        updateToolbar() {
+            if (this.toolbar) {
+                let text = this.formatAnchor(this.anchor);
+                this.toolbar.setText(text);
+            }
+        }
+
+        updateAnchor(delta) {
+            let anchor = this.anchor;
+            switch (this.mode) {
+                case this.MODES.MONTH:
+                    anchor.setMonth(anchor.getMonth() + delta);
+                    break;
+                case this.MODES.FLEX:
+                    anchor.setDate(anchor.getDate() + delta * this.flexRatio);
+                    break;
+                case this.MODES.DAY:
+                    anchor.setDate(anchor.getDate() + delta);
+                    break;
+                default:
+                    this.throwMode();
+            }
+        }
+
+        //calls rebindAll() directly if !noReload
+        setAnchor(date, noReload) {
+            this.anchor = date;
+
+            if (!noReload)
+                this.rebindAll();
+        }
+
+        parseFlexKWAttr() {
+            this.flexKW = this.hasAttribute("flex-kw");
+        }
+
+        parseModeAttr() {
+            let mode = this.getAttribute("mode");
+            if (!mode)
+                mode = this.MODES.DEFAULT;
+            this.setMode(mode);
+        }
+
+        parseToolbarAttr() {
+            if (this.hasAttribute("toolbar")) {
+                let toolbarAttr = this.getAttribute("toolbar");
+                let toolbar = document.querySelector(toolbarAttr);
+
+                if (toolbar instanceof CNToolbar) {
+                    this.toolbar = toolbar;
+                    this.toolbarItems = [
+                        toolbar.addItem("res/next.svg", this.next.bind(this)),
+                        toolbar.addItem("res/now.svg", function () {
+                            this.setAnchor(new Date());
+                        }.bind(this)),
+                        toolbar.addItem("res/previous.svg", this.previous.bind(this)),
+                    ];
+                }
+            }
+        }
+
+        //calls rebindAll() via setTemplate() via rebindTemplate()
+        setMode(mode) {
+            mode = mode.toLowerCase();
+
+            if (this.mode != mode) {
+                this.mode = mode;
+                this.reloadFormat();
+                this.reloadBinder();
+                this.rebindTemplate();
+            }
+        }
+
+        reloadFormat() {
+            switch (this.mode) {
+                case this.MODES.MONTH:
+                    this.formatAnchor = this.formatMonthMode.bind(this);
+                    break;
+                case this.MODES.FLEX:
+                    this.formatAnchor = this.formatFlexMode.bind(this);
+                    break;
+                case this.MODES.DAY:
+                    this.formatAnchor = this.formatDayMode.bind(this);
+                    break;
+                default:
+                    this.throwMode();
+            }
+        }
+
+        reloadBinder() {
+            switch (this.mode) {
+                case this.MODES.MONTH:
+                    this.onBind = this.onBindMonth.bind(this);
+                    this.requestBindPanel = this.requestBindPanelMonth.bind(this);
+                    break;
+                case this.MODES.FLEX:
+                    this.onBind = this.onBindFlex.bind(this);
+                    this.requestBindPanel = this.requestBindPanelFlex.bind(this);
+                    break;
+                case this.MODES.DAY:
+                    this.onBind = this.onBindDay.bind(this);
+                    this.requestBindPanel = this.requestBindPanelDay.bind(this);
+                    break;
+                default:
+                    this.throwMode();
+            }
+        }
+
+        rebindTemplate() {
+            let mode = this.mode;
+            let template;
+
+            switch (mode) {
+                case this.MODES.MONTH:
+                    template = this.createMonthTemplate();
+                    break;
+                case this.MODES.FLEX:
+                    template = this.createFlexTemplate();
+                    break;
+                case this.MODES.DAY:
+                    template = this.createDayTemplate();
+                    break;
+                default:
+                    this.throwMode();
+            }
+
+            this.setTemplate(template);
+        }
+
+        measureFlexRatio() {
+            this.flexRatio = Math.floor(this.measureWidth() / this.FLEX_MIN_WIDTH);
+            return this.flexRatio;
+        }
+
+        createMonthTemplate() {
+            let template = newDiv();
+
+            let headers = this.createHeaders(7);
+            template.appendChild(headers);
+
+            this.initPanel = this.initPanelMonth.bind(this);
+
+            let panels = this.createPanels(42, 7, 6, true);
+            template.appendChild(panels);
+
+            return template;
+        }
+
+        createFlexTemplate() {
+            let flexRatio = this.measureFlexRatio();
+            let template = newDiv();
+
+            let headers = this.createHeaders(flexRatio);
+            template.appendChild(headers);
+
+            this.initPanel = this.initPanelFlex.bind(this);
+
+            let panels = this.createPanels(flexRatio, flexRatio, 1);
+            template.appendChild(panels);
+
+            this.adaptPanelsHeight(panels);
+            this.createPanelsTimeStrips(panels);
+
+            return template;
+        }
+
+        createDayTemplate() {
+            let template = newDiv();
+
+            let headers = this.createHeaders(1);
+            template.appendChild(headers);
+
+            this.initPanel = this.initPanelDay.bind(this);
+
+            let panels = this.createPanels(1, 1, 1);
+            template.appendChild(panels);
+
+            this.adaptPanelsHeight(panels);
+            this.createPanelsTimeStrips(panels);
+
+            return template;
+        }
+
+        createHeaders(count) {
+            let headers = newDiv("headers");
+
+            for (let c = 0; c < count; c++) {
+                let header = this.createHeader(count, c);
+                headers.appendChild(header);
+            }
+
+            return headers;
+        }
+
+        createHeader(count, index) {
+            let header = newDiv("header");
+
+            header.innerText = this.WEEKDAYS[index % 7];
+            applySize(header, ratio(count));
+
+            return header;
+        }
+
+        createPanels(count, widthRatio, heightRatio, canHover) {
+            let panels = newDiv("panels");
+
+            for (let c = 0; c < count; c++) {
+                let panel = this.createPanel(widthRatio, heightRatio, canHover);
+                panels.appendChild(panel);
+            }
+
+            return panels;
+        }
+
+        createPanel(widthRatio, heightRatio, canHover) {
+            let clazz = "panel" + (canHover ? " hover" : "");
+            let panel = newDiv(clazz);
+
+            applySize(panel, ratio(widthRatio), ratio(heightRatio));
+            this.initPanel(panel);
+
+            return panel;
+        }
+
+        createPanelsTimeStrips(panels) {
+            for (let c = this.START_TIME; c < this.END_TIME; c+=60) {
+                let strip = this.createTimeStrip(c);
+                if (c == this.START_TIME)
+                    strip.style.borderTop = "none";
+                panels.appendChild(strip);
+            }
+        }
+
+        adaptPanelsHeight(panels) {
+            panels.style.overflowY = "scroll";
+
+            let panelsHeight = ((this.END_TIME - this.START_TIME) * this.PX_PER_MINUTE) + "px";
+            let panelsChildren = panels.children;
+            for (let c = 0; c < panelsChildren.length; c++)
+                panelsChildren[c].style.height = panelsHeight;
+        }
+
+        createTimeStrip(time) {
+            let strip = newDiv("time-strip");
+            strip.innerText = this.formatTime(time);
+            strip.style.top = ((time - this.START_TIME) * this.PX_PER_MINUTE) + "px";
+
+            return strip;
+        }
+
+        formatTime(time) {
+            let hour = Math.floor(time / 60);
+            let minute = (time - hour * 60);
+            return (hour < 10 ? "0" : "") + hour + ":" + (minute < 10 ? "0" : "") + minute;
+        }
+
+        throwMode() {
+            this.throw("Invalid CNCalendar.MODE");
+        }
+    }
+
+    customElements.define("cn-calendar", CNCalendar);
+</script>

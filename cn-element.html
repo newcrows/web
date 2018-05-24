@@ -1,0 +1,40 @@
+<script>
+    class CNElement extends HTMLElement {
+        constructor() {
+            super();
+            this.attachShadow({mode: "open"});
+        }
+
+        injectTemplate(templateId) {
+            let docRefs = window.CN.DOC_REFS;
+            for (let c = 0; c < docRefs.length; c++) {
+                let docRef = docRefs[c];
+
+                var template = docRef.querySelector(templateId);
+                if (template)
+                    break;
+            }
+
+            let content = template.content.cloneNode(true);
+            this.shadowRoot.appendChild(content);
+        }
+
+        shadowQuery(expression) {
+            return this.shadowRoot.querySelector(expression);
+        }
+
+        show() {
+            this.removeAttribute("hidden");
+        }
+
+        hide() {
+            this.setAttribute("hidden", null);
+        }
+
+        throw(error) {
+            throw new Error(error);
+        }
+    }
+
+    customElements.define("cn-element", CNElement);
+</script>

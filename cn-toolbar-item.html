@@ -1,0 +1,140 @@
+<template id="cn-toolbar-item">
+    <style>
+        .item {
+            position: relative;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .icon {
+            transition: all 0.4s ease;
+            border-radius: 50%;
+            float: left;
+        }
+
+        .hover:hover {
+            background: var(--primary-highlight);
+        }
+
+        .text {
+            margin: 0 8px 0 0;
+            padding-top: 12.5px;
+            float: left;
+        }
+
+        .px-16 {
+            width: 16px;
+            height: 16px;
+        }
+
+        .px-24 {
+            width: 24px;
+            height: 24px;
+        }
+
+        .px-32 {
+            width: 32px;
+            height: 32px;
+        }
+
+        .padding-17 {
+            padding: 15px;
+            margin: 2px;
+        }
+
+        .padding-13 {
+            padding: 11px;
+            margin: 2px;
+        }
+
+        .padding-9 {
+            padding: 7px;
+            margin: 2px;
+        }
+    </style>
+
+    <div class="item">
+        <div class="icon">
+            <img>
+        </div>
+        <div class="text"></div>
+    </div>
+</template>
+
+<script>
+    injectDocRef();
+
+    class CNToolbarItem extends CNElement {
+        constructor() {
+            super();
+            this.injectTemplate("#cn-toolbar-item");
+        }
+
+        connectedCallback() {
+            this.parseSizeAttr();
+            this.parseIconAttr();
+            this.parseTextAttr();
+        }
+
+        parseSizeAttr() {
+            let icon = this.shadowQuery(".icon");
+            let img = this.shadowQuery("img");
+
+            if (this.hasAttribute("small")) {
+                addClass(icon, "px-16 padding-17");
+                addClass(img, "px-16");
+            } else if (this.hasAttribute("large")) {
+                addClass(icon, "px-32 padding-9");
+                addClass(img, "px-32");
+            } else {
+                addClass(icon, "px-24 padding-13");
+                addClass(img, "px-24");
+            }
+        }
+
+        parseIconAttr() {
+            let img = this.shadowQuery("img");
+
+            if (this.hasAttribute("icon")) {
+                img.setAttribute("src", this.getAttribute("icon"));
+                this.styleIcon("","","","","1");
+            } else {
+                img.removeAttribute("icon");
+                this.styleIcon("1px","42px","4px","0","0");
+            }
+        }
+
+        styleIcon(w, h, p, m, o) {
+            let icon = this.shadowQuery(".icon");
+            icon.style.width = w;
+            icon.style.height = h;
+            icon.style.padding = p;
+            icon.style.margin = m;
+            icon.style.opacity = o;
+        }
+
+        parseTextAttr() {
+            let text = this.shadowQuery(".text");
+            let item = this.shadowQuery(".item");
+            let icon = this.shadowQuery(".icon");
+
+            if (this.hasAttribute("text")) {
+                text.innerText = this.getAttribute("text");
+                this.styleText("", item, icon);
+            } else {
+                text.innerText = "";
+                this.styleText("0",icon, item);
+            }
+        }
+
+        styleText(m, e0, e1) {
+            let text = this.shadowQuery(".text");
+
+            text.style.margin = m;
+            e0.classList.add("hover");
+            e1.classList.remove("hover");
+        }
+    }
+
+    customElements.define("cn-toolbar-item", CNToolbarItem);
+</script>
